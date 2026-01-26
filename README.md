@@ -1,3 +1,15 @@
+<!--
+Copyright (c) 2026 Red Hat, Inc.
+This program and the accompanying materials are made
+available under the terms of the Eclipse Public License 2.0
+which is available at https://www.eclipse.org/legal/epl-2.0/
+
+SPDX-License-Identifier: EPL-2.0
+
+Contributors:
+  Red Hat, Inc. - initial API and implementation
+-->
+
 # Deploy Eclipse Che with IPv6 Support
 
 This repository contains scripts and documentation for testing [Eclipse Che Dashboard PR-1442](https://github.com/eclipse-che/che-dashboard/pull/1442), which adds IPv6 URL validation support.
@@ -7,8 +19,6 @@ This repository contains scripts and documentation for testing [Eclipse Che Dash
 This repository was created to test **PR-1442: Add IPv6 support for dashboard and factory URLs**.
 
 The PR adds support for IPv6 URLs in factory flows, allowing users to create workspaces from repositories hosted on IPv6-only servers.
-
-## Is it tested? How?
 
 ### Testing Overview
 
@@ -21,14 +31,8 @@ This repository provides automated scripts to deploy and test Eclipse Che with I
 Use the OpenShift CI cluster bot to provision an IPv6-enabled cluster:
 
 ```bash
-# Recommended: IPv6-only cluster
 launch 4.20.2 metal,ipv6
-
-# Alternative: Dual-stack with IPv6 primary
-launch 4.20.2 metal,dualstack-primaryv6
 ```
-
-See [cluster-bot-commands.md](./cluster-bot-commands.md) for detailed cluster options.
 
 **2. Deploy Eclipse Che with PR-1442 Dashboard**
 
@@ -50,7 +54,7 @@ The script will:
 - ✅ Configure dashboard with PR-1442 image (`quay.io/eclipse/che-dashboard:pr-1442`)
 - ✅ Verify deployment and display Che URL
 
-See [deploy-che-ipv6-chectl.md](./deploy-che-ipv6-chectl.md) for detailed deployment documentation.
+See [deploy-che-ipv6-chectl.md](./scripts/deploy-che-ipv6-chectl.md) for detailed deployment documentation.
 
 **3. Run IPv6 Validation Tests**
 
@@ -66,7 +70,7 @@ The test script validates:
 - ✅ Support for various IPv6 URL formats
 - ✅ Dashboard handling of IPv6 addresses
 
-See [test-ipv6-validation.md](./test-ipv6-validation.md) for detailed testing documentation.
+See [test-ipv6-validation.md](./scripts/test-ipv6-validation.md) for detailed testing documentation.
 
 ### Test Scenarios
 
@@ -110,15 +114,15 @@ https://che-host/#http://[fd00::1]:8080/repo.git?df=devfile.yaml
 
 ### Documentation
 
-- **[deploy-che-ipv6-chectl.md](./deploy-che-ipv6-chectl.md)** - Comprehensive deployment guide
-- **[test-ipv6-validation.md](./test-ipv6-validation.md)** - Testing guide and test scenarios
-- **[cluster-bot-commands.md](./cluster-bot-commands.md)** - OpenShift cluster bot commands reference
+- **[deploy-che-ipv6-chectl.md](./scripts/deploy-che-ipv6-chectl.md)** - Comprehensive deployment guide
+- **[test-ipv6-validation.md](./scripts/test-ipv6-validation.md)** - Testing guide and test scenarios
 
 ## Quick Start
 
 ### Prerequisites
 
 1. **OpenShift Cluster with IPv6**
+   Cluster Bot Command: 
    ```bash
    launch 4.20.2 metal,ipv6
    ```
@@ -198,25 +202,15 @@ After deployment, you can manually test IPv6 URLs:
 - ✅ Proper error messages for invalid IPv6 formats
 - ✅ Factory flow works end-to-end with IPv6
 
-## Cluster Configurations
+## Cluster Configuration
 
-### Recommended: IPv6-Only
+Use the OpenShift CI cluster bot to provision an IPv6-enabled cluster:
 
 ```bash
 launch 4.20.2 metal,ipv6
 ```
 
-Pure IPv6 environment for thorough IPv6-only testing.
-
-### Alternative: Dual-Stack
-
-```bash
-# IPv6 primary, IPv4 secondary
-launch 4.20.2 metal,dualstack-primaryv6
-
-# IPv4 primary, IPv6 secondary (less thorough for IPv6 testing)
-launch 4.20.2 metal,dualstack
-```
+This provides a pure IPv6 environment for thorough IPv6-only testing.
 
 ## Troubleshooting
 

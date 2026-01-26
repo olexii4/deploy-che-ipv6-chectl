@@ -1,3 +1,15 @@
+<!--
+Copyright (c) 2026 Red Hat, Inc.
+This program and the accompanying materials are made
+available under the terms of the Eclipse Public License 2.0
+which is available at https://www.eclipse.org/legal/epl-2.0/
+
+SPDX-License-Identifier: EPL-2.0
+
+Contributors:
+  Red Hat, Inc. - initial API and implementation
+-->
+
 # IPv6 URL Validation Testing Guide
 
 This guide provides comprehensive testing procedures for IPv6 support in Eclipse Che Dashboard (PR-1442).
@@ -483,7 +495,6 @@ Document your test results:
 
 ## Additional Resources
 
-- [Data Resolver API Testing](./testing-data-resolver-api.md) - Detailed API testing guide
 - [Deployment Guide](./deploy-che-ipv6-chectl.md) - How to deploy Che with IPv6
 - [Issue #23674](https://github.com/eclipse-che/che/issues/23674) - Original issue
 - [RFC 3986 - IPv6 Literal Addresses](https://datatracker.ietf.org/doc/html/rfc3986#section-3.2.2)

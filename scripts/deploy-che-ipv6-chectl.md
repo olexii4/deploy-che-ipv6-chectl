@@ -1,3 +1,15 @@
+<!--
+Copyright (c) 2026 Red Hat, Inc.
+This program and the accompanying materials are made
+available under the terms of the Eclipse Public License 2.0
+which is available at https://www.eclipse.org/legal/epl-2.0/
+
+SPDX-License-Identifier: EPL-2.0
+
+Contributors:
+  Red Hat, Inc. - initial API and implementation
+-->
+
 # Deploy Eclipse Che with IPv6 Support on OpenShift
 
 This guide provides instructions for deploying Eclipse Che with IPv6 support on OpenShift clusters using chectl.
@@ -68,23 +80,6 @@ launch 4.20.2 metal,ipv6
 - ✅ **Metal platform** - Stable baremetal environment for comprehensive testing
 - ✅ **OpenShift 4.20.2** - Latest stable release with IPv6 improvements
 
-**Alternative Commands:**
-
-```bash
-# Large cluster (more resources for multiple workspaces)
-launch 4.20.2 metal,ipv6,large
-
-# Dual-stack with IPv6 primary (if you need IPv4 fallback)
-launch 4.20.2 metal,dualstack-primaryv6
-
-# Dual-stack with IPv4 primary (better compatibility)
-launch 4.20.2 metal,dualstack
-
-# Compact cluster (resource-limited testing)
-launch 4.20.2 metal,ipv6,compact
-```
-
-**📖 For detailed cluster bot documentation, see:** [Cluster Bot Commands Guide](./cluster-bot-commands.md)
 
 **After Launch:**
 

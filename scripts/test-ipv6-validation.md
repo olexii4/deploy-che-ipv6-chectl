@@ -306,13 +306,15 @@ Use the provided test script to run all validation tests:
 # Make script executable
 chmod +x test-ipv6-validation.sh
 
-# Run tests
+# Run tests (with kubeconfig from cluster bot)
+./test-ipv6-validation.sh --kubeconfig ~/ostest-kubeconfig.yaml
+
+# Or export KUBECONFIG and run
+export KUBECONFIG=~/ostest-kubeconfig.yaml
 ./test-ipv6-validation.sh
 
-# Run specific test suite
-./test-ipv6-validation.sh --suite frontend
-./test-ipv6-validation.sh --suite backend
-./test-ipv6-validation.sh --suite api
+# Cleanup test infrastructure
+./test-ipv6-validation.sh --kubeconfig ~/ostest-kubeconfig.yaml --cleanup
 ```
 
 ### Unit Tests

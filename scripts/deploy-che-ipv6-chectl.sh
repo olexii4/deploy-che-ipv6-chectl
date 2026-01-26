@@ -26,6 +26,7 @@
 #   ./deploy-che-ipv6-chectl.sh [options]
 #
 # Options:
+#   --kubeconfig <file>          Path to kubeconfig file (uses proxy-url from kubeconfig)
 #   --namespace <namespace>      Che namespace (default: eclipse-che)
 #   --dashboard-image <image>    Dashboard image (default: quay.io/eclipse/che-dashboard:pr-1442)
 #   --che-operator-image <image> Che operator image (default: quay.io/eclipse/che-operator:next)
@@ -52,10 +53,15 @@ CHE_OPERATOR_IMAGE="${CHE_OPERATOR_IMAGE:-quay.io/eclipse/che-operator:next}"
 SKIP_IPV6_CHECK=false
 SKIP_MIRROR=false
 LOCAL_REGISTRY=""
+KUBECONFIG_FILE=""
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
+        --kubeconfig)
+            KUBECONFIG_FILE="$2"
+            shift 2
+            ;;
         --namespace)
             NAMESPACE="$2"
             shift 2
@@ -91,6 +97,17 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# Set KUBECONFIG if provided
+if [ -n "$KUBECONFIG_FILE" ]; then
+    if [ ! -f "$KUBECONFIG_FILE" ]; then
+        echo -e "${RED}Error: Kubeconfig file not found: $KUBECONFIG_FILE${NC}"
+        exit 1
+    fi
+    export KUBECONFIG="$KUBECONFIG_FILE"
+    echo -e "${GREEN}✓ Using kubeconfig: $KUBECONFIG_FILE${NC}"
+    echo ""
+fi
 
 echo -e "${BLUE}╔════════════════════════════════════════════════════════════╗${NC}"
 echo -e "${BLUE}║  Deploy Eclipse Che with IPv6 Support on OpenShift        ║${NC}"

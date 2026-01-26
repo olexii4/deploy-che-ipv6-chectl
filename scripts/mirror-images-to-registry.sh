@@ -13,6 +13,7 @@
 #   ./mirror-images-to-registry.sh [options]
 #
 # Options:
+#   --kubeconfig <file>      Path to kubeconfig file (uses proxy-url from kubeconfig)
 #   --registry <host:port>   Local registry (default: auto-detect from cluster)
 #   --namespace <namespace>  Che namespace (default: eclipse-che)
 #   --dashboard-image <image> Dashboard image (default: quay.io/eclipse/che-dashboard:pr-1442)
@@ -36,10 +37,15 @@ NAMESPACE="eclipse-che"
 DASHBOARD_IMAGE="quay.io/eclipse/che-dashboard:pr-1442"
 CHE_OPERATOR_IMAGE="quay.io/eclipse/che-operator:next"
 DRY_RUN=false
+KUBECONFIG_FILE=""
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
+        --kubeconfig)
+            KUBECONFIG_FILE="$2"
+            shift 2
+            ;;
         --registry)
             LOCAL_REGISTRY="$2"
             shift 2
@@ -67,6 +73,17 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# Set KUBECONFIG if provided
+if [ -n "$KUBECONFIG_FILE" ]; then
+    if [ ! -f "$KUBECONFIG_FILE" ]; then
+        echo -e "${RED}Error: Kubeconfig file not found: $KUBECONFIG_FILE${NC}"
+        exit 1
+    fi
+    export KUBECONFIG="$KUBECONFIG_FILE"
+    echo -e "${GREEN}✓ Using kubeconfig: $KUBECONFIG_FILE${NC}"
+    echo ""
+fi
 
 echo -e "${BLUE}╔════════════════════════════════════════════════════════════╗${NC}"
 echo -e "${BLUE}║     Mirror Eclipse Che Images to Local Registry           ║${NC}"

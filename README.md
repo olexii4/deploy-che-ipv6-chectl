@@ -12,6 +12,16 @@ Use the OpenShift CI cluster bot to provision an IPv6-enabled cluster:
 launch 4.20.2 metal,ipv6
 ```
 
+Save the kubeconfig provided by cluster bot:
+
+```bash
+# Save kubeconfig to file
+cat > ~/ostest-kubeconfig.yaml << 'EOF'
+# Paste the kubeconfig content from cluster bot here
+# (includes proxy-url for cluster access)
+EOF
+```
+
 **2. Deploy Eclipse Che with PR-1442 Dashboard**
 
 Run the automated deployment script:
@@ -21,8 +31,8 @@ Run the automated deployment script:
 git clone https://github.com/olexii4/deploy-che-ipv6-chectl.git
 cd deploy-che-ipv6-chectl
 
-# Run deployment script
-./scripts/deploy-che-ipv6-chectl.sh
+# Run deployment script with kubeconfig
+./scripts/deploy-che-ipv6-chectl.sh --kubeconfig ~/ostest-kubeconfig.yaml
 ```
 
 The script will:
@@ -39,7 +49,7 @@ See [deploy-che-ipv6-chectl.md](./scripts/deploy-che-ipv6-chectl.md) for detaile
 Execute the automated test suite:
 
 ```bash
-./scripts/test-ipv6-validation.sh
+./scripts/test-ipv6-validation.sh --kubeconfig ~/ostest-kubeconfig.yaml
 ```
 
 The test script validates:

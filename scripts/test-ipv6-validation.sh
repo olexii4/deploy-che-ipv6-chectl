@@ -30,6 +30,7 @@
 #   ./test-ipv6-validation.sh [options]
 #
 # Options:
+#   --kubeconfig <file>   Path to kubeconfig file (uses proxy-url from kubeconfig)
 #   --namespace <ns>      Test infrastructure namespace (default: che-test)
 #   --che-namespace <ns>  Che namespace (default: eclipse-che)
 #   --cleanup            Remove test infrastructure
@@ -48,10 +49,15 @@ NC='\033[0m' # No Color
 NAMESPACE="che-test"
 CHE_NAMESPACE="eclipse-che"
 CLEANUP=false
+KUBECONFIG_FILE=""
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
+        --kubeconfig)
+            KUBECONFIG_FILE="$2"
+            shift 2
+            ;;
         --namespace)
             NAMESPACE="$2"
             shift 2
@@ -75,6 +81,17 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# Set KUBECONFIG if provided
+if [ -n "$KUBECONFIG_FILE" ]; then
+    if [ ! -f "$KUBECONFIG_FILE" ]; then
+        echo -e "${RED}Error: Kubeconfig file not found: $KUBECONFIG_FILE${NC}"
+        exit 1
+    fi
+    export KUBECONFIG="$KUBECONFIG_FILE"
+    echo -e "${GREEN}✓ Using kubeconfig: $KUBECONFIG_FILE${NC}"
+    echo ""
+fi
 
 # Cleanup mode
 if [ "$CLEANUP" == "true" ]; then

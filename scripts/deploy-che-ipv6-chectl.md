@@ -84,16 +84,24 @@ launch 4.20.2 metal,ipv6
 **After Launch:**
 
 1. The bot will respond with cluster credentials and kubeconfig
-2. Download the kubeconfig file
-3. Set environment variable:
+2. Save the kubeconfig to a file:
    ```bash
-   export KUBECONFIG=/path/to/kubeconfig
+   cat > ~/ostest-kubeconfig.yaml << 'EOF'
+   # Paste the kubeconfig content from cluster bot here
+   # (includes proxy-url for cluster access)
+   EOF
    ```
 
-4. Verify cluster access:
+3. Verify cluster access:
    ```bash
+   export KUBECONFIG=~/ostest-kubeconfig.yaml
    oc get nodes
    oc whoami
+   ```
+
+   Or use the `--kubeconfig` flag with deployment scripts (recommended):
+   ```bash
+   ./scripts/deploy-che-ipv6-chectl.sh --kubeconfig ~/ostest-kubeconfig.yaml
    ```
 
 5. **Cluster Lifetime:** Cluster bot clusters are temporary (typically 4-6 hours)
@@ -233,8 +241,14 @@ echo "Eclipse Che URL: $CHE_URL"
 #### Step 1: Login to OpenShift
 
 ```bash
-# If using cluster bot, set kubeconfig
-export KUBECONFIG=/path/to/cluster-bot-kubeconfig
+# If using cluster bot, save kubeconfig to file
+cat > ~/ostest-kubeconfig.yaml << 'EOF'
+# Paste the kubeconfig content from cluster bot here
+# (includes proxy-url for cluster access)
+EOF
+
+# Set kubeconfig
+export KUBECONFIG=~/ostest-kubeconfig.yaml
 
 # Verify login
 oc whoami

@@ -722,6 +722,15 @@ echo "  with devfile: http://[${GIT_IPV6}]:8080/python-hello-world.git?df=http:/
 echo ""
 
 if [ -n "${REPO_NAME}" ]; then
+    echo "External inputs:"
+    echo "  repo-url:     ${REPO_URL}"
+    echo "  repo-url (normalized for cloning): ${REPO_URL_NORM}"
+    if [ -n "${DEVFILE_URL}" ]; then
+        echo "  devfile-url:  ${DEVFILE_URL}"
+    else
+        echo "  devfile-url:  (not provided)"
+    fi
+    echo ""
     echo "External repo (mirrored, via IPv6):"
     echo "  http://[${GIT_IPV6}]:8080/${REPO_NAME}"
     if [ -n "${DEVFILE_URL}" ]; then

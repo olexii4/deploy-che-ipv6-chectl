@@ -35,6 +35,17 @@ The script `scripts/mirror-images-to-registry.sh` mirrors the required images in
 - **`--mode minimal`**: mirrors only the core Che-related images (faster).
 - **`--mode full`**: includes DevWorkspace + UDI (recommended for workspace tests).
 
+Optional performance/visibility flags:
+
+```bash
+./scripts/mirror-images-to-registry.sh \
+  --kubeconfig ~/ostest-kubeconfig.yaml \
+  --mode full \
+  --parallel 3 \
+  --heartbeat-seconds 60 \
+  --skopeo-log-level debug
+```
+
 ### Predownload images for later (no cluster access required)
 
 If you want to reduce dependency on proxy availability during deployment, you can predownload the script’s **base image list** into a local cache.

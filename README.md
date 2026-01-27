@@ -44,10 +44,20 @@ Useful options:
 # Auto-install chectl if missing
 ./scripts/deploy-che-ipv6-chectl.sh --kubeconfig ~/ostest-kubeconfig.yaml --install-chectl
 
+# Predownload base images to local cache before touching the cluster (optional)
+# This helps when proxy connectivity is flaky during the deploy window.
+./scripts/deploy-che-ipv6-chectl.sh --prefetch-images
+
 # IPv6-only clusters: choose mirroring mode
 # - full (default): includes DevWorkspace + UDI for workspace tests
 # - minimal: mirrors only Che + registries + cert-manager (faster, but workspace creation may not work)
 ./scripts/deploy-che-ipv6-chectl.sh --kubeconfig ~/ostest-kubeconfig.yaml --mirror-mode minimal
+
+# Use a local cache directory for prefetch + mirroring reuse (optional)
+./scripts/deploy-che-ipv6-chectl.sh \
+  --kubeconfig ~/ostest-kubeconfig.yaml \
+  --prefetch-images \
+  --cache-dir ~/.cache/che-ipv6-mirror
 ```
 
 The script will:
@@ -150,6 +160,10 @@ Notes:
   - `mirror-images-to-registry.sh` exports `HTTP_PROXY/HTTPS_PROXY` from kubeconfig `proxy-url` before running `skopeo` (since `skopeo` does not read kubeconfig `proxy-url`).
 - **Mirroring is safer**:
   - The mirroring script no longer applies `ImageContentSourcePolicy` if image mirroring fails.
+- **Mirroring is more reliable and can be faster**:
+  - `mirror-images-to-registry.sh` supports `--prefetch-only` + `--cache-dir` to predownload the fixed image list into local OCI archives.
+  - When a cached OCI archive exists, mirroring will push from cache instead of pulling from the source registry again.
+  - Each `skopeo copy` operation is protected by a timeout (`SKOPEO_TIMEOUT_SECONDS`, default 900s) to avoid hangs.
 - **Fixed bad image reference**:
   - Removed the non-existent `quay.io/eclipse/che--traefik:v2.11.12` entry from the mirror list (it caused guaranteed failures).
 

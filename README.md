@@ -69,7 +69,7 @@ The script will:
 - ✅ Verify deployment and display Che URL
 
 See [deploy-che-ipv6-chectl.md](./scripts/deploy-che-ipv6-chectl.md) for detailed deployment documentation.
-See [mirror-images-to-registry.md](./mirror-images-to-registry.md) for detailed mirroring documentation.
+See [mirror-images-to-registry.md](./scripts/mirror-images-to-registry.md) for detailed mirroring documentation.
 
 **3. Run IPv6 Validation Tests**
 

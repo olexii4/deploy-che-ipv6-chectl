@@ -71,7 +71,30 @@ The script will:
 See [deploy-che-ipv6-chectl.md](./scripts/deploy-che-ipv6-chectl.md) for detailed deployment documentation.
 See [mirror-images-to-registry.md](./scripts/mirror-images-to-registry.md) for detailed mirroring documentation.
 
-**3. Run IPv6 Validation Tests**
+**3. Access Eclipse Che Dashboard**
+
+On cluster-bot clusters, the Che route may not be directly accessible from your laptop. Use one of these approaches:
+
+```bash
+# Option 1: SOCKS Proxy (Recommended)
+# Requires SSH access to a Red Hat bastion/VPN server
+ssh -D 1080 -N -f user@bastion.redhat.com
+
+# Configure Firefox:
+# Settings → Network → Manual proxy → SOCKS Host: 127.0.0.1, Port: 1080, SOCKS v5
+# ✓ Enable "Proxy DNS when using SOCKS v5"
+
+# Get Che URL and open in Firefox
+CHE_URL=$(oc get checluster eclipse-che -n eclipse-che -o jsonpath='{.status.cheURL}')
+echo "Open in Firefox: ${CHE_URL}/dashboard/"
+
+# Option 2: Diagnose access issues
+./scripts/diagnose-che-access.sh
+```
+
+See [diagnose-che-access.md](./scripts/diagnose-che-access.md) for detailed troubleshooting.
+
+**4. Run IPv6 Validation Tests**
 
 Execute the automated test suite:
 
@@ -148,25 +171,58 @@ Notes:
 - **[scripts/deploy-che-ipv6-chectl.sh](./scripts/deploy-che-ipv6-chectl.sh)** - Automated deployment script
 - **[scripts/mirror-images-to-registry.sh](./scripts/mirror-images-to-registry.sh)** - Mirrors required images to the cluster registry (used automatically on IPv6-only clusters)
 - **[scripts/test-ipv6-validation.sh](./scripts/test-ipv6-validation.sh)** - Automated IPv6 validation test suite
+- **[scripts/diagnose-che-access.sh](./scripts/diagnose-che-access.sh)** - Diagnose and resolve Che dashboard access issues
+- **[scripts/create-che-proxy.sh](./scripts/create-che-proxy.sh)** - Create HTTP proxy pod for Che access via port-forward
 
 ### Documentation
 
 - **[deploy-che-ipv6-chectl.md](./scripts/deploy-che-ipv6-chectl.md)** - Comprehensive deployment guide
 - **[test-ipv6-validation.md](./scripts/test-ipv6-validation.md)** - Testing guide and test scenarios
+- **[diagnose-che-access.md](./scripts/diagnose-che-access.md)** - Troubleshooting dashboard access issues
+- **[create-che-proxy.md](./scripts/create-che-proxy.md)** - HTTP proxy pod setup guide
+- **[mirror-images-to-registry.md](./scripts/mirror-images-to-registry.md)** - Image mirroring documentation
 
-## Recent script fixes (2026-01)
+## Recent Changes (2026-01)
 
-- **Proxy support (cluster-bot kubeconfig)**:
-  - `deploy-che-ipv6-chectl.sh` exports `HTTP_PROXY/HTTPS_PROXY` from kubeconfig `proxy-url` before running `chectl`.
-  - `mirror-images-to-registry.sh` exports `HTTP_PROXY/HTTPS_PROXY` from kubeconfig `proxy-url` before running `skopeo` (since `skopeo` does not read kubeconfig `proxy-url`).
-- **Mirroring is safer**:
-  - The mirroring script no longer applies `ImageContentSourcePolicy` if image mirroring fails.
-- **Mirroring is more reliable and can be faster**:
-  - `mirror-images-to-registry.sh` supports `--prefetch-only` + `--cache-dir` to predownload the fixed image list into local OCI archives.
-  - When a cached OCI archive exists, mirroring will push from cache instead of pulling from the source registry again.
-  - Each `skopeo copy` operation is protected by a timeout (`SKOPEO_TIMEOUT_SECONDS`, default 900s) to avoid hangs.
-- **Fixed bad image reference**:
-  - Removed the non-existent `quay.io/eclipse/che--traefik:v2.11.12` entry from the mirror list (it caused guaranteed failures).
+### Deployment & Networking
+- **Enhanced proxy support (cluster-bot kubeconfig)**:
+  - `deploy-che-ipv6-chectl.sh` exports `HTTP_PROXY/HTTPS_PROXY` from kubeconfig `proxy-url` before running `chectl`
+  - Script uses local `oc proxy` when API hostname is not resolvable (avoids ENOTFOUND errors)
+  - Automatic retry logic when cluster-bot proxy becomes temporarily unavailable
+- **Improved deployment resilience**:
+  - Automatic discovery and mirroring of missing OLM bundle images when deployment fails
+  - Better handling of catalog source and operator bundle images
+  - Disabled dynamic bundle discovery on macOS to avoid compatibility issues
+
+### Image Mirroring
+- **Safer and more reliable mirroring**:
+  - No longer applies `ImageContentSourcePolicy` if image mirroring fails
+  - Each `skopeo copy` operation protected by timeout (`SKOPEO_TIMEOUT_SECONDS`, default 900s) to avoid hangs
+  - Support for `--parallel` copying with configurable concurrency
+  - Heartbeat messages during long operations (configurable with `--heartbeat-seconds`)
+- **Cache and prefetch support**:
+  - `--prefetch-only` + `--cache-dir` to predownload images into local OCI archives before cluster deployment
+  - When cached OCI archives exist, mirroring pushes from cache instead of re-pulling from source
+  - Cache directory defaults to `~/.cache/che-ipv6-mirror/`
+- **OLM bundle image support**:
+  - Added OLM bundle images to mirror list for complete operator deployment
+  - Automatic discovery of images from `openshift-marketplace` and `openshift-operators` namespaces
+- **Fixed image references**:
+  - Removed non-existent `quay.io/eclipse/che--traefik:v2.11.12` from mirror list
+  - Trimmed base image set to essential images only
+
+### Access & Diagnostics
+- **New proxy pod approach**:
+  - Added `create-che-proxy.sh` to create nginx proxy pod for Che access via port-forward
+  - Alternative to SOCKS proxy when VPN/bastion access is not available
+- **Enhanced diagnostics**:
+  - `diagnose-che-access.sh` tests cluster-internal access, DNS resolution, and network connectivity
+  - Provides specific solutions based on failure mode (SOCKS proxy, /etc/hosts, OpenShift Console)
+
+### Documentation
+- All scripts now have corresponding `.md` documentation files in `scripts/` directory
+- Expanded troubleshooting guides with cluster-bot specific patterns
+- Added mirroring verbosity and performance tuning documentation
 
 ### Manual Testing
 

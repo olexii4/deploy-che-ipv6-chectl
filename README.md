@@ -2,6 +2,9 @@
 
 This repository contains scripts and documentation for testing [Eclipse Che Dashboard PR-1442](https://github.com/eclipse-che/che-dashboard/pull/1442), which adds IPv6 URL validation support.
 
+> **Note about cluster-bot kubeconfigs:** cluster-bot kubeconfigs typically include `proxy-url`.  
+> These scripts automatically use that proxy when needed (so you don’t hit DNS errors like `ENOTFOUND api.<cluster>`).
+
 ### Test Environment Setup
 
 **1. Provision OpenShift Cluster with IPv6**
@@ -35,10 +38,23 @@ cd deploy-che-ipv6-chectl
 ./scripts/deploy-che-ipv6-chectl.sh --kubeconfig ~/ostest-kubeconfig.yaml
 ```
 
+Useful options:
+
+```bash
+# Auto-install chectl if missing
+./scripts/deploy-che-ipv6-chectl.sh --kubeconfig ~/ostest-kubeconfig.yaml --install-chectl
+
+# IPv6-only clusters: choose mirroring mode
+# - full (default): includes DevWorkspace + UDI for workspace tests
+# - minimal: mirrors only Che + registries + cert-manager (faster, but workspace creation may not work)
+./scripts/deploy-che-ipv6-chectl.sh --kubeconfig ~/ostest-kubeconfig.yaml --mirror-mode minimal
+```
+
 The script will:
 - ✅ Verify IPv6 cluster networking
-- ✅ Install chectl if needed
-- ✅ Deploy Eclipse Che operator
+- ✅ Use kubeconfig `proxy-url` automatically (if present)
+- ✅ Check `chectl` is installed (or install with `--install-chectl`)
+- ✅ Deploy Eclipse Che **via the operator** (using `chectl server:deploy --installer operator`)
 - ✅ Configure dashboard with PR-1442 image (`quay.io/eclipse/che-dashboard:pr-1442`)
 - ✅ Verify deployment and display Che URL
 
@@ -85,6 +101,27 @@ https://che-host/#http://[fd00::1]:8080/repo.git
 https://che-host/#http://[fd00::1]:8080/repo.git?df=devfile.yaml
 ```
 
+#### Test infrastructure with a real repo + a real devfile (mirrored into cluster)
+
+The test script can *optionally* mirror an external Git repository and an external devfile URL into the cluster and then serve them via IPv6-only service IPs.
+
+Example repo + devfile:
+
+- Git repo: `git@github.com:che-samples/web-nodejs-sample.git` (the script will rewrite this to HTTPS for cloning)
+- Devfile: `https://registry.devfile.io/devfiles/nodejs-angular/2.2.1` (see content at [`registry.devfile.io`](https://registry.devfile.io/devfiles/nodejs-angular/2.2.1))
+
+Run:
+
+```bash
+./scripts/test-ipv6-validation.sh \
+  --kubeconfig ~/ostest-kubeconfig.yaml \
+  --repo-url git@github.com:che-samples/web-nodejs-sample.git \
+  --devfile-url https://registry.devfile.io/devfiles/nodejs-angular/2.2.1
+```
+
+Notes:
+- On **IPv6-only clusters**, the cluster may not have outbound access to GitHub / `registry.devfile.io`. If mirroring fails, the script will still deploy the built-in sample repos/devfiles and print those IPv6 factory URLs.
+
 ### Expected Results
 
 - ✅ Dashboard correctly parses IPv6 URLs with square brackets
@@ -98,12 +135,23 @@ https://che-host/#http://[fd00::1]:8080/repo.git?df=devfile.yaml
 ### Scripts
 
 - **[scripts/deploy-che-ipv6-chectl.sh](./scripts/deploy-che-ipv6-chectl.sh)** - Automated deployment script
+- **[scripts/mirror-images-to-registry.sh](./scripts/mirror-images-to-registry.sh)** - Mirrors required images to the cluster registry (used automatically on IPv6-only clusters)
 - **[scripts/test-ipv6-validation.sh](./scripts/test-ipv6-validation.sh)** - Automated IPv6 validation test suite
 
 ### Documentation
 
 - **[deploy-che-ipv6-chectl.md](./scripts/deploy-che-ipv6-chectl.md)** - Comprehensive deployment guide
 - **[test-ipv6-validation.md](./scripts/test-ipv6-validation.md)** - Testing guide and test scenarios
+
+## Recent script fixes (2026-01)
+
+- **Proxy support (cluster-bot kubeconfig)**:
+  - `deploy-che-ipv6-chectl.sh` exports `HTTP_PROXY/HTTPS_PROXY` from kubeconfig `proxy-url` before running `chectl`.
+  - `mirror-images-to-registry.sh` exports `HTTP_PROXY/HTTPS_PROXY` from kubeconfig `proxy-url` before running `skopeo` (since `skopeo` does not read kubeconfig `proxy-url`).
+- **Mirroring is safer**:
+  - The mirroring script no longer applies `ImageContentSourcePolicy` if image mirroring fails.
+- **Fixed bad image reference**:
+  - Removed the non-existent `quay.io/eclipse/che--traefik:v2.11.12` entry from the mirror list (it caused guaranteed failures).
 
 ### Manual Testing
 

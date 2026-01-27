@@ -234,8 +234,6 @@ IMAGES=()
 IMAGES+=(
   "${CHE_OPERATOR_IMAGE}"
   "${DASHBOARD_IMAGE}"
-  # chectl/CSV defaults often reference :next initially; mirror it so bootstrap doesn't fail
-  "quay.io/eclipse/che-dashboard:next"
   "quay.io/eclipse/che-server:next"
   # Gateway uses configbump:next
   "quay.io/che-incubator/configbump:next"
@@ -244,12 +242,6 @@ IMAGES+=(
   "quay.io/openshift/origin-kube-rbac-proxy:4.9"
   # Eclipse Che OLM catalog (CatalogSource created by chectl)
   "quay.io/eclipse/eclipse-che-olm-catalog:next"
-
-  # Cert-manager images (used on non-OpenShift / sometimes still referenced)
-  "quay.io/jetstack/cert-manager-controller:v1.14.2"
-  "quay.io/jetstack/cert-manager-webhook:v1.14.2"
-  "quay.io/jetstack/cert-manager-cainjector:v1.14.2"
-  "quay.io/jetstack/cert-manager-acmesolver:v1.14.2"
 
   # Registries (Che components)
   "quay.io/eclipse/che-plugin-registry:next"
@@ -272,29 +264,30 @@ if [ "${#MIRROR_FROM_NAMESPACES[@]}" -gt 0 ]; then
   if [ "${PREFETCH_ONLY}" = "true" ]; then
     echo -e "${YELLOW}⚠ --mirror-from-namespace ignored in --prefetch-only mode (requires cluster access).${NC}"
     echo ""
-  fi
-  echo -e "${YELLOW}Discovering images from namespaces:${NC} ${MIRROR_FROM_NAMESPACES[*]}"
-  for NS in "${MIRROR_FROM_NAMESPACES[@]}"; do
-    # Best-effort: if namespace doesn't exist yet, skip.
-    if ! oc get ns "${NS}" >/dev/null 2>&1; then
-      echo -e "${YELLOW}  ⚠ Namespace not found (skipping): ${NS}${NC}"
-      continue
-    fi
-
-    while IFS= read -r img; do
-      [ -z "${img}" ] && continue
-      # Skip already-mirrored registry references
-      if echo "${img}" | grep -q "^${LOCAL_REGISTRY}/"; then
+  else
+    echo -e "${YELLOW}Discovering images from namespaces:${NC} ${MIRROR_FROM_NAMESPACES[*]}"
+    for NS in "${MIRROR_FROM_NAMESPACES[@]}"; do
+      # Best-effort: if namespace doesn't exist yet, skip.
+      if ! oc get ns "${NS}" >/dev/null 2>&1; then
+        echo -e "${YELLOW}  ⚠ Namespace not found (skipping): ${NS}${NC}"
         continue
       fi
-      IMAGES+=("${img}")
-    done < <(
-      oc get pods -n "${NS}" -o jsonpath='{range .items[*]}{range .spec.initContainers[*]}{.image}{"\n"}{end}{range .spec.containers[*]}{.image}{"\n"}{end}{end}' 2>/dev/null \
-        | sed '/^$/d' \
-        | sort -u
-    )
-  done
-  echo ""
+
+      while IFS= read -r img; do
+        [ -z "${img}" ] && continue
+        # Skip already-mirrored registry references
+        if echo "${img}" | grep -q "^${LOCAL_REGISTRY}/"; then
+          continue
+        fi
+        IMAGES+=("${img}")
+      done < <(
+        oc get pods -n "${NS}" -o jsonpath='{range .items[*]}{range .spec.initContainers[*]}{.image}{"\n"}{end}{range .spec.containers[*]}{.image}{"\n"}{end}{end}' 2>/dev/null \
+          | sed '/^$/d' \
+          | sort -u
+      )
+    done
+    echo ""
+  fi
 fi
 
 echo "Will mirror ${#IMAGES[@]} images:"

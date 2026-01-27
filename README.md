@@ -50,7 +50,7 @@ Useful options:
 
 # IPv6-only clusters: choose mirroring mode
 # - full (default): includes DevWorkspace + UDI for workspace tests
-# - minimal: mirrors only Che + registries + cert-manager (faster, but workspace creation may not work)
+# - minimal: mirrors only core Che images (faster, but workspace creation may not work)
 ./scripts/deploy-che-ipv6-chectl.sh --kubeconfig ~/ostest-kubeconfig.yaml --mirror-mode minimal
 
 # Use a local cache directory for prefetch + mirroring reuse (optional)
@@ -69,6 +69,7 @@ The script will:
 - ✅ Verify deployment and display Che URL
 
 See [deploy-che-ipv6-chectl.md](./scripts/deploy-che-ipv6-chectl.md) for detailed deployment documentation.
+See [mirror-images-to-registry.md](./mirror-images-to-registry.md) for detailed mirroring documentation.
 
 **3. Run IPv6 Validation Tests**
 

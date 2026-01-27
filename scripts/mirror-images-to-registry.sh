@@ -274,6 +274,22 @@ echo -e "${YELLOW}════════════════════�
 MIRRORED=0
 FAILED=0
 
+# Decide whether we need multi-arch mirroring.
+# On a typical cluster-bot metal cluster, all nodes are linux/amd64; mirroring only that platform
+# significantly reduces transfer size and avoids timeouts on very large images (e.g. UDI).
+CLUSTER_ARCHS="$(oc get nodes -o jsonpath='{range .items[*]}{.status.nodeInfo.architecture}{"\n"}{end}' 2>/dev/null | sed '/^$/d' | sort -u || true)"
+ARCH_COUNT="$(echo "${CLUSTER_ARCHS}" | sed '/^$/d' | wc -l | tr -d ' ' || echo "0")"
+SINGLE_ARCH="$(echo "${CLUSTER_ARCHS}" | head -1 || true)"
+SKOPEO_ALL_FLAG="--all"
+SKOPEO_PLATFORM_FLAGS=""
+if [ "${ARCH_COUNT}" = "1" ] && [ -n "${SINGLE_ARCH}" ]; then
+    SKOPEO_ALL_FLAG=""
+    SKOPEO_PLATFORM_FLAGS="--override-os linux --override-arch ${SINGLE_ARCH}"
+    echo -e "${YELLOW}Detected single cluster architecture: linux/${SINGLE_ARCH}${NC}"
+    echo -e "${YELLOW}Will mirror only linux/${SINGLE_ARCH} (not all platforms)${NC}"
+    echo ""
+fi
+
 # Use kubeconfig proxy-url (if present) for tools that do NOT honor kubeconfig proxy-url (e.g. skopeo).
 # Important: keep quay.io and RH registries in NO_PROXY so we can pull directly, while pushing to the
 # cluster-local registry via the proxy.
@@ -307,7 +323,7 @@ for SOURCE_IMAGE in "${IMAGES[@]}"; do
     fi
 
     # Build skopeo command
-    SKOPEO_CMD="skopeo copy --all"
+    SKOPEO_CMD="skopeo copy ${SKOPEO_ALL_FLAG} ${SKOPEO_PLATFORM_FLAGS}"
 
     # Add optional source creds (useful when some quay.io orgs require auth)
     if [ -n "${QUAY_CREDS}" ]; then

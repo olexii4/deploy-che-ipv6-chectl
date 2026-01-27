@@ -75,6 +75,72 @@ extract_proxy_url_from_kubeconfig() {
     fi
 }
 
+is_host_resolvable() {
+    # Returns 0 if host resolves locally, 1 otherwise.
+    local host="${1:-}"
+    [ -z "${host}" ] && return 1
+    python3 - <<'PY' "${host}" >/dev/null 2>&1
+import socket, sys
+host=sys.argv[1]
+socket.getaddrinfo(host, 443)
+PY
+}
+
+prepare_chectl_kubeconfig() {
+    # chectl (Node.js) can fail with ENOTFOUND for cluster-bot API hostnames when local DNS cannot resolve them.
+    # If the API host isn't resolvable locally, run chectl through a local `oc proxy` and a temporary kubeconfig.
+    #
+    # Sets:
+    # - CHECTL_KUBECONFIG: kubeconfig path to use for chectl
+    # - CHECTL_OC_PROXY_PID: background oc proxy pid (if started)
+    CHECTL_KUBECONFIG="${KUBECONFIG:-}"
+    CHECTL_OC_PROXY_PID=""
+
+    local api_server
+    api_server="$(oc whoami --show-server 2>/dev/null || true)"
+    if [ -z "${api_server}" ]; then
+        return 0
+    fi
+
+    local api_host
+    api_host="$(echo "${api_server}" | sed -E 's|^https?://||' | cut -d/ -f1 | cut -d: -f1)"
+    if [ -z "${api_host}" ]; then
+        return 0
+    fi
+
+    if is_host_resolvable "${api_host}"; then
+        return 0
+    fi
+
+    echo -e "${YELLOW}⚠ Local DNS cannot resolve API host: ${api_host}${NC}"
+    echo -e "${YELLOW}  Using local oc proxy for chectl to avoid ENOTFOUND${NC}"
+
+    local port="8001"
+    local tmp_kc="/tmp/chectl-oc-proxy.kubeconfig"
+
+    # Start oc proxy in background (best-effort). If it fails, chectl will likely fail too.
+    oc proxy --port="${port}" --accept-hosts='^.*$' >/dev/null 2>&1 &
+    CHECTL_OC_PROXY_PID="$!"
+
+    # Ensure proxy is stopped on exit
+    trap 'if [ -n "${CHECTL_OC_PROXY_PID}" ]; then kill "${CHECTL_OC_PROXY_PID}" >/dev/null 2>&1 || true; fi' EXIT
+
+    # Create a kubeconfig that points to the local proxy, and remove proxy-url entries.
+    python3 - <<'PY' "${KUBECONFIG:-}" "${tmp_kc}" "${port}"
+import pathlib, re, sys
+src = pathlib.Path(sys.argv[1])
+dst = pathlib.Path(sys.argv[2])
+port = sys.argv[3]
+text = src.read_text(errors="ignore")
+text = "\n".join([l for l in text.splitlines() if "proxy-url:" not in l]) + "\n"
+text = re.sub(r"^(\s*server:\s*).+$", r"\1http://127.0.0.1:%s" % port, text, flags=re.M)
+dst.write_text(text)
+print(dst)
+PY
+
+    CHECTL_KUBECONFIG="${tmp_kc}"
+}
+
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -320,7 +386,9 @@ else
         # Wait for nodes to be ready after MachineConfigPool update
         echo -e "${YELLOW}Waiting for all nodes to be Ready...${NC}"
         for i in {1..60}; do
-            NOT_READY=$(oc get nodes --no-headers 2>/dev/null | grep -v " Ready " | wc -l || echo "1")
+                # With pipefail enabled, `grep -v` returning 1 (no matches) would break `|| echo ...`
+                # and result in multi-line output like "0\n1". Count not-ready nodes safely instead.
+                NOT_READY=$(oc get nodes --no-headers 2>/dev/null | grep -vc " Ready " || true)
             if [ "$NOT_READY" -eq 0 ]; then
                 echo -e "${GREEN}✓ All nodes are Ready${NC}"
                 break
@@ -349,18 +417,65 @@ echo -e "${YELLOW}Running chectl server:deploy...${NC}"
 echo "This may take 5-10 minutes..."
 echo ""
 
-# Deploy Che
+# Prepare chectl networking (proxy-url + optional local oc proxy kubeconfig)
+prepare_chectl_kubeconfig
+
 PROXY_URL="$(extract_proxy_url_from_kubeconfig "${KUBECONFIG_FILE}")"
 if [ -n "${PROXY_URL}" ]; then
     echo -e "${YELLOW}Using kubeconfig proxy for chectl: ${PROXY_URL}${NC}"
 fi
 
-HTTPS_PROXY="${PROXY_URL:-}" HTTP_PROXY="${PROXY_URL:-}" chectl server:deploy \
+set +e
+KUBECONFIG="${CHECTL_KUBECONFIG}" HTTPS_PROXY="${PROXY_URL:-}" HTTP_PROXY="${PROXY_URL:-}" chectl server:deploy \
     --platform openshift \
     --installer operator \
     --batch \
+    --telemetry off \
     --chenamespace "${NAMESPACE}" \
     --che-operator-image "${CHE_OPERATOR_IMAGE}"
+CHECTL_RC=$?
+set -e
+
+if [ "${CHECTL_RC}" -ne 0 ]; then
+    echo ""
+    echo -e "${YELLOW}⚠ chectl deploy failed (exit ${CHECTL_RC}).${NC}"
+    echo -e "${YELLOW}  On IPv6-only clusters this is often caused by missing mirrored images (CatalogSource, bundle-unpack, gateway sidecars).${NC}"
+    echo -e "${YELLOW}  Attempting to mirror images discovered from cluster namespaces and retry once...${NC}"
+
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    MIRROR_SCRIPT="${SCRIPT_DIR}/mirror-images-to-registry.sh"
+    REMEDIATE_ARGS=( --namespace "${NAMESPACE}" --dashboard-image "${DASHBOARD_IMAGE}" --mode "full" )
+    if [ -n "${KUBECONFIG_FILE}" ]; then
+        REMEDIATE_ARGS+=( --kubeconfig "${KUBECONFIG_FILE}" )
+    fi
+    if [ -n "${LOCAL_REGISTRY}" ]; then
+        REMEDIATE_ARGS+=( --registry "${LOCAL_REGISTRY}" )
+    fi
+    if [ -n "${QUAY_CREDS}" ]; then
+        REMEDIATE_ARGS+=( --quay-creds "${QUAY_CREDS}" )
+    fi
+    # Discover what the cluster is actually trying to pull.
+    REMEDIATE_ARGS+=( --mirror-from-namespace "openshift-marketplace" --mirror-from-namespace "openshift-operators" --mirror-from-namespace "${NAMESPACE}" )
+
+    bash "$MIRROR_SCRIPT" "${REMEDIATE_ARGS[@]}"
+
+    echo -e "${YELLOW}Retrying chectl server:deploy...${NC}"
+    set +e
+    KUBECONFIG="${CHECTL_KUBECONFIG}" HTTPS_PROXY="${PROXY_URL:-}" HTTP_PROXY="${PROXY_URL:-}" chectl server:deploy \
+        --platform openshift \
+        --installer operator \
+        --batch \
+        --telemetry off \
+        --chenamespace "${NAMESPACE}" \
+        --che-operator-image "${CHE_OPERATOR_IMAGE}"
+    CHECTL_RC=$?
+    set -e
+
+    if [ "${CHECTL_RC}" -ne 0 ]; then
+        echo -e "${RED}Error: chectl deploy failed again (exit ${CHECTL_RC}).${NC}"
+        exit "${CHECTL_RC}"
+    fi
+fi
 
 echo ""
 echo -e "${GREEN}✓ Che deployment initiated${NC}"
@@ -468,7 +583,7 @@ echo ""
 
 # Display results
 echo -e "${GREEN}╔════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${GREEN}║         Eclipse Che Deployed Successfully! 🎉             ║${NC}"
+echo -e "${GREEN}║         Eclipse Che Deployed Successfully!                 ║${NC}"
 echo -e "${GREEN}╚════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 

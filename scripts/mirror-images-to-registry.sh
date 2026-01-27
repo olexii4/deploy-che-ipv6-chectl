@@ -17,6 +17,9 @@
 #   --registry <host:port>   Local registry (default: auto-detect from cluster)
 #   --namespace <namespace>  Che namespace (default: eclipse-che)
 #   --dashboard-image <image> Dashboard image (default: quay.io/eclipse/che-dashboard:pr-1442)
+#   --mirror-from-namespace <ns>
+#                           Additionally mirror images referenced by Pods in this namespace.
+#                           Can be specified multiple times (e.g. openshift-marketplace, openshift-operators, eclipse-che).
 #   --mode <minimal|full>    Images set to mirror:
 #                             - minimal: Che + registries + cert-manager (no DevWorkspace/UDI)
 #                             - full:    minimal + DevWorkspace images + UDI (recommended for workspace tests)
@@ -46,6 +49,7 @@ MODE="full"
 QUAY_CREDS="${QUAY_CREDS:-}"
 DRY_RUN=false
 KUBECONFIG_FILE=""
+MIRROR_FROM_NAMESPACES=()
 
 # Helpers
 extract_proxy_url_from_kubeconfig() {
@@ -76,6 +80,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --dashboard-image)
             DASHBOARD_IMAGE="$2"
+            shift 2
+            ;;
+        --mirror-from-namespace)
+            MIRROR_FROM_NAMESPACES+=("$2")
             shift 2
             ;;
         --mode)
@@ -194,8 +202,16 @@ IMAGES=()
 IMAGES+=(
   "${CHE_OPERATOR_IMAGE}"
   "${DASHBOARD_IMAGE}"
+  # chectl/CSV defaults often reference :next initially; mirror it so bootstrap doesn't fail
+  "quay.io/eclipse/che-dashboard:next"
   "quay.io/eclipse/che-server:next"
-  "quay.io/che-incubator/configbump:latest"
+  # Gateway uses configbump:next
+  "quay.io/che-incubator/configbump:next"
+  # Gateway sidecars on OpenShift
+  "quay.io/openshift/origin-oauth-proxy:4.9"
+  "quay.io/openshift/origin-kube-rbac-proxy:4.9"
+  # Eclipse Che OLM catalog (CatalogSource created by chectl)
+  "quay.io/eclipse/eclipse-che-olm-catalog:next"
 
   # Cert-manager images (used on non-OpenShift / sometimes still referenced)
   "quay.io/jetstack/cert-manager-controller:v1.14.2"
@@ -211,10 +227,38 @@ IMAGES+=(
 # Full set adds DevWorkspace + UDI, required for workspace creation tests.
 if [ "${MODE}" = "full" ]; then
   IMAGES+=(
+    # Required by OLM CatalogSource created by chectl (devworkspace-operator-index:next)
+    "quay.io/devfile/devworkspace-operator-index:next"
     "quay.io/devfile/devworkspace-controller:next"
     "quay.io/devfile/project-clone:next"
     "quay.io/devfile/universal-developer-image:ubi9-latest"
   )
+fi
+
+# Optionally discover additional images from namespaces (helps when operators pin sha-* tags/digests).
+if [ "${#MIRROR_FROM_NAMESPACES[@]}" -gt 0 ]; then
+  echo -e "${YELLOW}Discovering images from namespaces:${NC} ${MIRROR_FROM_NAMESPACES[*]}"
+  for NS in "${MIRROR_FROM_NAMESPACES[@]}"; do
+    # Best-effort: if namespace doesn't exist yet, skip.
+    if ! oc get ns "${NS}" >/dev/null 2>&1; then
+      echo -e "${YELLOW}  ⚠ Namespace not found (skipping): ${NS}${NC}"
+      continue
+    fi
+
+    while IFS= read -r img; do
+      [ -z "${img}" ] && continue
+      # Skip already-mirrored registry references
+      if echo "${img}" | grep -q "^${LOCAL_REGISTRY}/"; then
+        continue
+      fi
+      IMAGES+=("${img}")
+    done < <(
+      oc get pods -n "${NS}" -o jsonpath='{range .items[*]}{range .spec.initContainers[*]}{.image}{"\n"}{end}{range .spec.containers[*]}{.image}{"\n"}{end}{end}' 2>/dev/null \
+        | sed '/^$/d' \
+        | sort -u
+    )
+  done
+  echo ""
 fi
 
 echo "Will mirror ${#IMAGES[@]} images:"
@@ -325,8 +369,70 @@ if [ $FAILED -gt 0 ]; then
     exit 1
 fi
 
-# Update ImageContentSourcePolicy
-echo -e "${YELLOW}Step 4: Creating ImageContentSourcePolicy${NC}"
+# Update cluster mirror configuration
+echo -e "${YELLOW}Step 4: Creating mirror configuration (tag + digest)${NC}"
+echo -e "${YELLOW}═══════════════════════════════════════════════════════════${NC}"
+
+# Prefer ImageTagMirrorSet / ImageDigestMirrorSet (OCP 4.12+), keep ICSP for backward compatibility.
+cat > /tmp/che-tag-mirrors.yaml <<EOF
+apiVersion: config.openshift.io/v1
+kind: ImageTagMirrorSet
+metadata:
+  name: che-tag-mirrors
+spec:
+  imageTagMirrors:
+  - source: quay.io/eclipse
+    mirrors:
+    - ${LOCAL_REGISTRY}/eclipse-che/eclipse
+  - source: quay.io/che-incubator
+    mirrors:
+    - ${LOCAL_REGISTRY}/eclipse-che/che-incubator
+  - source: quay.io/jetstack
+    mirrors:
+    - ${LOCAL_REGISTRY}/eclipse-che/jetstack
+  - source: quay.io/devfile
+    mirrors:
+    - ${LOCAL_REGISTRY}/eclipse-che/devfile
+  - source: quay.io/openshift
+    mirrors:
+    - ${LOCAL_REGISTRY}/eclipse-che/openshift
+EOF
+
+cat > /tmp/che-digest-mirrors.yaml <<EOF
+apiVersion: config.openshift.io/v1
+kind: ImageDigestMirrorSet
+metadata:
+  name: che-digest-mirrors
+spec:
+  imageDigestMirrors:
+  - source: quay.io/eclipse
+    mirrors:
+    - ${LOCAL_REGISTRY}/eclipse-che/eclipse
+  - source: quay.io/che-incubator
+    mirrors:
+    - ${LOCAL_REGISTRY}/eclipse-che/che-incubator
+  - source: quay.io/jetstack
+    mirrors:
+    - ${LOCAL_REGISTRY}/eclipse-che/jetstack
+  - source: quay.io/devfile
+    mirrors:
+    - ${LOCAL_REGISTRY}/eclipse-che/devfile
+  - source: quay.io/openshift
+    mirrors:
+    - ${LOCAL_REGISTRY}/eclipse-che/openshift
+EOF
+
+echo "Created ImageTagMirrorSet: /tmp/che-tag-mirrors.yaml"
+echo "Created ImageDigestMirrorSet: /tmp/che-digest-mirrors.yaml"
+echo ""
+
+echo -e "${YELLOW}Applying ImageTagMirrorSet / ImageDigestMirrorSet...${NC}"
+oc apply -f /tmp/che-tag-mirrors.yaml
+oc apply -f /tmp/che-digest-mirrors.yaml
+echo -e "${GREEN}✓ Tag/Digest mirror sets applied${NC}"
+echo ""
+
+echo -e "${YELLOW}Creating ImageContentSourcePolicy (compat) ...${NC}"
 echo -e "${YELLOW}═══════════════════════════════════════════════════════════${NC}"
 
 cat > /tmp/che-image-policy.yaml <<EOF
@@ -348,17 +454,18 @@ spec:
   - mirrors:
     - ${LOCAL_REGISTRY}/eclipse-che/jetstack
     source: quay.io/jetstack
+  - mirrors:
+    - ${LOCAL_REGISTRY}/eclipse-che/openshift
+    source: quay.io/openshift
 EOF
 
-if [ "${MODE}" = "full" ]; then
 cat >> /tmp/che-image-policy.yaml <<EOF
 
-  # DevWorkspace images (required for workspace creation)
+  # DevWorkspace images (required for workspace creation + OLM catalogs/bundles)
   - mirrors:
     - ${LOCAL_REGISTRY}/eclipse-che/devfile
     source: quay.io/devfile
 EOF
-fi
 
 echo "Created ImageContentSourcePolicy:"
 cat /tmp/che-image-policy.yaml

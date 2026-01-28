@@ -61,6 +61,9 @@ CLEANUP=false
 KUBECONFIG_FILE=""
 REPO_URL=""
 DEVFILE_URL=""
+EXTERNAL_DEVFILE_URL=""
+EXTERNAL_REPO_URL=""
+EXTERNAL_REPO_NAME=""
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do

@@ -39,19 +39,19 @@ cd deploy-che-ipv6-chectl
 
 ```bash
 # Deploy with dashboard PR (using shortcut)
-./scripts/deploy-che-ipv6-chectl.sh \
+./scripts/deploy-che-ipv6.sh \
   --skip-ipv6-check \
   --skip-mirror \
   --dashboard-image pr-1442
 
 # Deploy with latest dashboard
-./scripts/deploy-che-ipv6-chectl.sh \
+./scripts/deploy-che-ipv6.sh \
   --skip-ipv6-check \
   --skip-mirror \
   --dashboard-image latest
 
 # Deploy CodeReady Workspaces locally
-./scripts/deploy-che-ipv6-chectl.sh \
+./scripts/deploy-che-ipv6.sh \
   --crw \
   --skip-ipv6-check \
   --skip-mirror
@@ -61,20 +61,20 @@ cd deploy-che-ipv6-chectl
 
 ```bash
 # Deploy with manual OLM (recommended for IPv6-only)
-./scripts/deploy-che-ipv6-chectl.sh \
+./scripts/deploy-che-ipv6.sh \
   --kubeconfig ~/ostest-kubeconfig.yaml \
   --dashboard-image pr-1442 \
   --manual-olm
 
 # Deploy with longer timeout
-./scripts/deploy-che-ipv6-chectl.sh \
+./scripts/deploy-che-ipv6.sh \
   --kubeconfig ~/ostest-kubeconfig.yaml \
   --dashboard-image pr-1442 \
   --manual-olm \
   --olm-timeout 900
 
 # Deploy CodeReady Workspaces on IPv6 cluster
-./scripts/deploy-che-ipv6-chectl.sh \
+./scripts/deploy-che-ipv6.sh \
   --crw \
   --kubeconfig ~/ostest-kubeconfig.yaml \
   --manual-olm
@@ -84,13 +84,13 @@ cd deploy-che-ipv6-chectl
 
 ```bash
 # Prefetch images to local cache before deployment (IPv6-only clusters)
-./scripts/deploy-che-ipv6-chectl.sh \
+./scripts/deploy-che-ipv6.sh \
   --prefetch-images \
   --manual-olm \
   --kubeconfig ~/ostest-kubeconfig.yaml
 
 # Use custom cache directory for prefetch + mirroring reuse
-./scripts/deploy-che-ipv6-chectl.sh \
+./scripts/deploy-che-ipv6.sh \
   --manual-olm \
   --kubeconfig ~/ostest-kubeconfig.yaml \
   --prefetch-images \
@@ -99,13 +99,13 @@ cd deploy-che-ipv6-chectl
 # Choose mirroring mode for IPv6-only clusters
 # - full (default): includes DevWorkspace + UDI for workspace tests
 # - minimal: mirrors only core Che images (faster, but workspace creation may not work)
-./scripts/deploy-che-ipv6-chectl.sh \
+./scripts/deploy-che-ipv6.sh \
   --manual-olm \
   --kubeconfig ~/ostest-kubeconfig.yaml \
   --mirror-mode minimal
 
 # Auto-install chectl if missing (only needed for chectl method)
-./scripts/deploy-che-ipv6-chectl.sh \
+./scripts/deploy-che-ipv6.sh \
   --kubeconfig ~/ostest-kubeconfig.yaml \
   --install-chectl
 ```
@@ -142,16 +142,16 @@ The script supports convenient shortcuts for dashboard images, similar to the lo
 
 ```bash
 # Use shortcut (pr-XXXX)
-./scripts/deploy-che-ipv6-chectl.sh --dashboard-image pr-1442
+./scripts/deploy-che-ipv6.sh --dashboard-image pr-1442
 
 # Use next (upstream)
-./scripts/deploy-che-ipv6-chectl.sh --dashboard-image next
+./scripts/deploy-che-ipv6.sh --dashboard-image next
 
 # Use latest with CRW (uses Red Hat registry)
-./scripts/deploy-che-ipv6-chectl.sh --crw --dashboard-image latest
+./scripts/deploy-che-ipv6.sh --crw --dashboard-image latest
 
 # Use full image path
-./scripts/deploy-che-ipv6-chectl.sh --dashboard-image quay.io/myorg/che-dashboard:custom
+./scripts/deploy-che-ipv6.sh --dashboard-image quay.io/myorg/che-dashboard:custom
 ```
 
 **CodeReady Workspaces (--crw flag):**
@@ -182,7 +182,7 @@ The script supports convenient shortcuts for dashboard images, similar to the lo
 - ✅ Mirror images on IPv6-only clusters (unless `--skip-mirror`)
 - ✅ Verify deployment and display Che URL
 
-See [deploy-che-ipv6-chectl.md](./scripts/deploy-che-ipv6-chectl.md) for detailed deployment documentation.
+See [deploy-che-ipv6.md](./scripts/deploy-che-ipv6.md) for detailed deployment documentation.
 See [mirror-images-to-registry.md](./scripts/mirror-images-to-registry.md) for detailed mirroring documentation.
 
 > **⚠️ Troubleshooting Deployment Timeout**
@@ -194,7 +194,7 @@ See [mirror-images-to-registry.md](./scripts/mirror-images-to-registry.md) for d
 > This is a known chectl limitation (hardcoded 120s timeout in `src/api/kube-client.ts:1395`).
 > **Solution:** Use `--manual-olm` flag to bypass chectl and deploy via OLM directly:
 > ```bash
-> ./scripts/deploy-che-ipv6-chectl.sh --manual-olm --kubeconfig ~/ostest-kubeconfig.yaml
+> ./scripts/deploy-che-ipv6.sh --manual-olm --kubeconfig ~/ostest-kubeconfig.yaml
 > ```
 >
 > The manual OLM method provides:
@@ -300,14 +300,14 @@ Notes:
 
 ### Scripts
 
-- **[scripts/deploy-che-ipv6-chectl.sh](./scripts/deploy-che-ipv6-chectl.sh)** - Automated deployment script
+- **[scripts/deploy-che-ipv6.sh](./scripts/deploy-che-ipv6.sh)** - Automated deployment script
 - **[scripts/mirror-images-to-registry.sh](./scripts/mirror-images-to-registry.sh)** - Mirrors required images to the cluster registry (used automatically on IPv6-only clusters)
 - **[scripts/test-ipv6-validation.sh](./scripts/test-ipv6-validation.sh)** - Automated IPv6 validation test suite
 - **[scripts/diagnose-che-access.sh](./scripts/diagnose-che-access.sh)** - Diagnose and resolve Che dashboard access issues
 
 ### Documentation
 
-- **[deploy-che-ipv6-chectl.md](./scripts/deploy-che-ipv6-chectl.md)** - Comprehensive deployment guide
+- **[deploy-che-ipv6.md](./scripts/deploy-che-ipv6.md)** - Comprehensive deployment guide
 - **[test-ipv6-validation.md](./scripts/test-ipv6-validation.md)** - Testing guide and test scenarios
 - **[diagnose-che-access.md](./scripts/diagnose-che-access.md)** - Troubleshooting dashboard access issues
 - **[mirror-images-to-registry.md](./scripts/mirror-images-to-registry.md)** - Image mirroring documentation
@@ -323,7 +323,7 @@ Notes:
   - Provides detailed progress logging every 10 seconds
   - No chectl installation required when using `--manual-olm`
 - **Enhanced proxy support (cluster-bot kubeconfig)**:
-  - `deploy-che-ipv6-chectl.sh` exports `HTTP_PROXY/HTTPS_PROXY` from kubeconfig `proxy-url` before running `chectl`
+  - `deploy-che-ipv6.sh` exports `HTTP_PROXY/HTTPS_PROXY` from kubeconfig `proxy-url` before running `chectl`
   - Script uses local `oc proxy` when API hostname is not resolvable (avoids ENOTFOUND errors)
   - Automatic retry logic when cluster-bot proxy becomes temporarily unavailable
 - **Improved deployment resilience**:

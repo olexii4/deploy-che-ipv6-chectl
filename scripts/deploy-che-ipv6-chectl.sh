@@ -11,14 +11,19 @@
 #   Red Hat, Inc. - initial API and implementation
 #
 
-# Deploy Eclipse Che with IPv6 support on OpenShift using chectl
+# Deploy Eclipse Che with IPv6 support on OpenShift
 #
 # This script deploys Eclipse Che on OpenShift clusters with IPv6 support
 # using the PR-1442 dashboard image that includes IPv6 URL validation.
 #
+# Deployment Methods:
+# 1. chectl (default): Uses chectl server:deploy with operator installer
+# 2. Manual OLM (--manual-olm): Deploys via OLM directly, bypassing chectl's
+#    hardcoded 120-second subscription timeout (recommended for IPv6-only clusters)
+#
 # Prerequisites:
 # - oc CLI configured and connected to an OpenShift cluster
-# - chectl installed (https://github.com/che-incubator/chectl)
+# - chectl installed (only if not using --manual-olm)
 # - OpenShift cluster with IPv6 networking support
 #   (launched via cluster bot: "launch 4.20.2 metal,ipv6")
 #
@@ -31,6 +36,8 @@
 #   --dashboard-image <image>    Dashboard image (default: quay.io/eclipse/che-dashboard:pr-1442)
 #   --che-operator-image <image> Che operator image (default: quay.io/eclipse/che-operator:next)
 #   --install-chectl             Install chectl automatically if missing (best-effort)
+#   --manual-olm                 Deploy Eclipse Che manually via OLM (bypasses chectl, avoids 120s timeout)
+#   --olm-timeout <seconds>      Timeout for OLM subscription readiness (default: 600, only with --manual-olm)
 #   --skip-ipv6-check           Skip IPv6 cluster verification
 #   --skip-mirror               Skip image mirroring (use if images already mirrored)
 #   --mirror-mode <minimal|full> Mirroring mode for IPv6-only clusters (default: full)
@@ -62,6 +69,8 @@ SKIP_MIRROR=false
 LOCAL_REGISTRY=""
 KUBECONFIG_FILE=""
 INSTALL_CHECTL=false
+MANUAL_OLM=false
+OLM_TIMEOUT=600
 MIRROR_MODE="full"
 QUAY_CREDS="${QUAY_CREDS:-}"
 OPENSHIFT_REGISTRY_HOST="image-registry.openshift-image-registry.svc:5000"
@@ -182,6 +191,183 @@ wait_for_local_oc_proxy() {
     return 1
 }
 
+deploy_che_manual_olm() {
+    # Deploy Eclipse Che manually via OLM without chectl
+    # This bypasses chectl's hardcoded 120-second subscription timeout
+
+    echo -e "${YELLOW}Step 4: Deploying Eclipse Che manually via OLM${NC}"
+    echo -e "${YELLOW}═══════════════════════════════════════════════════════════${NC}"
+    echo ""
+
+    # Step 4a: Create namespace
+    echo -e "${BLUE}[1/6] Creating namespace${NC}"
+    if oc get namespace "${NAMESPACE}" &>/dev/null; then
+        echo -e "${GREEN}✓ Namespace '${NAMESPACE}' already exists${NC}"
+    else
+        oc create namespace "${NAMESPACE}"
+        echo -e "${GREEN}✓ Namespace '${NAMESPACE}' created${NC}"
+    fi
+    echo ""
+
+    # Step 4b: Verify CatalogSources
+    echo -e "${BLUE}[2/6] Verifying CatalogSources${NC}"
+    local catalog_timeout=120
+
+    # Wait for eclipse-che catalog
+    echo "  Waiting for eclipse-che CatalogSource..."
+    for ((i=1; i<=$catalog_timeout; i++)); do
+        if oc get catalogsource eclipse-che -n openshift-marketplace &>/dev/null; then
+            local catalog_state=$(oc get catalogsource eclipse-che -n openshift-marketplace -o jsonpath='{.status.connectionState.lastObservedState}' 2>/dev/null || echo "")
+            if [ "${catalog_state}" == "READY" ]; then
+                echo -e "${GREEN}✓ eclipse-che CatalogSource is READY${NC}"
+                break
+            fi
+        fi
+        if [ $i -eq $catalog_timeout ]; then
+            echo -e "${RED}✗ Timeout waiting for eclipse-che CatalogSource${NC}"
+            exit 1
+        fi
+        sleep 1
+    done
+
+    # Wait for devworkspace-operator catalog
+    echo "  Waiting for devworkspace-operator CatalogSource..."
+    for ((i=1; i<=$catalog_timeout; i++)); do
+        if oc get catalogsource devworkspace-operator -n openshift-marketplace &>/dev/null 2>&1; then
+            local catalog_state=$(oc get catalogsource devworkspace-operator -n openshift-marketplace -o jsonpath='{.status.connectionState.lastObservedState}' 2>/dev/null || echo "")
+            if [ "${catalog_state}" == "READY" ]; then
+                echo -e "${GREEN}✓ devworkspace-operator CatalogSource is READY${NC}"
+                break
+            fi
+        fi
+        if [ $i -eq $catalog_timeout ]; then
+            echo -e "${YELLOW}⚠ devworkspace-operator CatalogSource not ready, continuing anyway${NC}"
+            break
+        fi
+        sleep 1
+    done
+    echo ""
+
+    # Step 4c: Create DevWorkspace subscription
+    echo -e "${BLUE}[3/6] Creating DevWorkspace Operator subscription${NC}"
+    cat <<EOF | oc apply -f -
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: devworkspace-operator
+  namespace: ${NAMESPACE}
+spec:
+  channel: next
+  installPlanApproval: Automatic
+  name: devworkspace-operator
+  source: devworkspace-operator
+  sourceNamespace: openshift-marketplace
+EOF
+    echo -e "${GREEN}✓ DevWorkspace subscription created${NC}"
+    echo ""
+
+    # Step 4d: Wait for DevWorkspace CSV
+    echo -e "${BLUE}[4/6] Waiting for DevWorkspace Operator CSV (timeout: ${OLM_TIMEOUT}s)${NC}"
+    local csv_found=false
+    for ((i=1; i<=$OLM_TIMEOUT; i++)); do
+        local csv=$(oc get subscription devworkspace-operator -n ${NAMESPACE} -o jsonpath='{.status.installedCSV}' 2>/dev/null || echo "")
+        if [ -n "${csv}" ]; then
+            echo "  Found CSV: ${csv}"
+            local csv_phase=$(oc get csv "${csv}" -n ${NAMESPACE} -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
+            echo "  CSV Phase: ${csv_phase}"
+            if [ "${csv_phase}" == "Succeeded" ]; then
+                echo -e "${GREEN}✓ DevWorkspace Operator installed successfully${NC}"
+                csv_found=true
+                break
+            fi
+        fi
+        if [ $((i % 10)) -eq 0 ]; then
+            echo "  Waiting for DevWorkspace CSV... (${i}/${OLM_TIMEOUT}s)"
+        fi
+        sleep 1
+    done
+
+    if [ "${csv_found}" != "true" ]; then
+        echo -e "${RED}✗ Timeout waiting for DevWorkspace CSV to be ready${NC}"
+        echo "  Current subscription status:"
+        oc get subscription devworkspace-operator -n ${NAMESPACE} -o yaml 2>/dev/null || true
+        exit 1
+    fi
+    echo ""
+
+    # Step 4e: Create Eclipse Che subscription
+    echo -e "${BLUE}[5/6] Creating Eclipse Che subscription${NC}"
+    cat <<EOF | oc apply -f -
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: eclipse-che
+  namespace: ${NAMESPACE}
+spec:
+  channel: next
+  installPlanApproval: Automatic
+  name: eclipse-che
+  source: eclipse-che
+  sourceNamespace: openshift-marketplace
+EOF
+    echo -e "${GREEN}✓ Eclipse Che subscription created${NC}"
+    echo ""
+
+    # Step 4f: Wait for Eclipse Che CSV
+    echo -e "${BLUE}[6/6] Waiting for Eclipse Che CSV (timeout: ${OLM_TIMEOUT}s)${NC}"
+    csv_found=false
+    for ((i=1; i<=$OLM_TIMEOUT; i++)); do
+        local csv=$(oc get subscription eclipse-che -n ${NAMESPACE} -o jsonpath='{.status.installedCSV}' 2>/dev/null || echo "")
+        if [ -n "${csv}" ]; then
+            echo "  Found CSV: ${csv}"
+            local csv_phase=$(oc get csv "${csv}" -n ${NAMESPACE} -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
+            echo "  CSV Phase: ${csv_phase}"
+            if [ "${csv_phase}" == "Succeeded" ]; then
+                echo -e "${GREEN}✓ Eclipse Che Operator installed successfully${NC}"
+                csv_found=true
+                break
+            fi
+        fi
+        if [ $((i % 10)) -eq 0 ]; then
+            echo "  Waiting for Eclipse Che CSV... (${i}/${OLM_TIMEOUT}s)"
+        fi
+        sleep 1
+    done
+
+    if [ "${csv_found}" != "true" ]; then
+        echo -e "${RED}✗ Timeout waiting for Eclipse Che CSV to be ready${NC}"
+        echo "  Current subscription status:"
+        oc get subscription eclipse-che -n ${NAMESPACE} -o yaml 2>/dev/null || true
+        echo ""
+        echo "  Checking for InstallPlan:"
+        oc get installplan -n ${NAMESPACE} 2>/dev/null || true
+        exit 1
+    fi
+    echo ""
+
+    # Step 4g: Create CheCluster
+    echo -e "${YELLOW}Creating CheCluster with PR-1442 dashboard...${NC}"
+    cat <<EOF | oc apply -f -
+apiVersion: org.eclipse.che/v2
+kind: CheCluster
+metadata:
+  name: eclipse-che
+  namespace: ${NAMESPACE}
+spec:
+  components:
+    dashboard:
+      deployment:
+        containers:
+        - image: ${DASHBOARD_IMAGE}
+          imagePullPolicy: Always
+          name: che-dashboard
+  devEnvironments:
+    startTimeoutSeconds: 600
+EOF
+    echo -e "${GREEN}✓ CheCluster created${NC}"
+    echo ""
+}
+
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -204,6 +390,14 @@ while [[ $# -gt 0 ]]; do
         --install-chectl)
             INSTALL_CHECTL=true
             shift
+            ;;
+        --manual-olm)
+            MANUAL_OLM=true
+            shift
+            ;;
+        --olm-timeout)
+            OLM_TIMEOUT="$2"
+            shift 2
             ;;
         --skip-ipv6-check)
             SKIP_IPV6_CHECK=true
@@ -281,6 +475,7 @@ echo -e "${BLUE}╚════════════════════�
 echo ""
 echo -e "${YELLOW}Configuration:${NC}"
 echo "  Platform:         OpenShift"
+echo "  Deployment mode:  $([ "${MANUAL_OLM}" = "true" ] && echo "Manual OLM (timeout: ${OLM_TIMEOUT}s)" || echo "chectl")"
 echo "  Namespace:        ${NAMESPACE}"
 echo "  Dashboard image:  ${DASHBOARD_IMAGE}"
 echo "  Operator image:   ${CHE_OPERATOR_IMAGE}"
@@ -298,32 +493,39 @@ if ! command -v oc &> /dev/null; then
 fi
 echo -e "${GREEN}✓ oc CLI found: $(oc version --client | head -1)${NC}"
 
-# Check chectl
-if ! command -v chectl &> /dev/null; then
-    if [ "${INSTALL_CHECTL}" = "true" ]; then
-        echo -e "${YELLOW}chectl not found. Installing chectl...${NC}"
-        if ! command -v curl &> /dev/null; then
-            echo -e "${RED}Error: curl not found; cannot auto-install chectl.${NC}"
+# Check chectl (skip if using manual OLM)
+if [ "${MANUAL_OLM}" = "false" ]; then
+    if ! command -v chectl &> /dev/null; then
+        if [ "${INSTALL_CHECTL}" = "true" ]; then
+            echo -e "${YELLOW}chectl not found. Installing chectl...${NC}"
+            if ! command -v curl &> /dev/null; then
+                echo -e "${RED}Error: curl not found; cannot auto-install chectl.${NC}"
+                exit 1
+            fi
+            # Generated by GPT-5.2
+            bash -c "bash <(curl -fsSL https://che-incubator.github.io/chectl/install.sh)" || {
+                echo -e "${RED}Error: chectl installation failed.${NC}"
+                exit 1
+            }
+        else
+            echo -e "${RED}Error: chectl not found${NC}"
+            echo ""
+            echo "Install chectl (or re-run with --install-chectl or --manual-olm):"
+            echo "  # Using installer script"
+            echo "  bash <(curl -sL https://che-incubator.github.io/chectl/install.sh)"
+            echo ""
+            echo "  # Or using npm"
+            echo "  npm install -g chectl"
+            echo ""
+            echo "  # Or deploy without chectl"
+            echo "  ./deploy-che-ipv6-chectl.sh --manual-olm ..."
             exit 1
         fi
-        # Generated by GPT-5.2
-        bash -c "bash <(curl -fsSL https://che-incubator.github.io/chectl/install.sh)" || {
-            echo -e "${RED}Error: chectl installation failed.${NC}"
-            exit 1
-        }
-    else
-        echo -e "${RED}Error: chectl not found${NC}"
-        echo ""
-        echo "Install chectl (or re-run with --install-chectl):"
-        echo "  # Using installer script"
-        echo "  bash <(curl -sL https://che-incubator.github.io/chectl/install.sh)"
-        echo ""
-        echo "  # Or using npm"
-        echo "  npm install -g chectl"
-        exit 1
     fi
+    echo -e "${GREEN}✓ chectl found: $(chectl version)${NC}"
+else
+    echo -e "${YELLOW}⊙ Using manual OLM deployment (chectl not required)${NC}"
 fi
-echo -e "${GREEN}✓ chectl found: $(chectl version)${NC}"
 
 # Check cluster connectivity
 if ! oc whoami &> /dev/null; then
@@ -474,12 +676,21 @@ else
 fi
 
 # Step 4: Deploy Eclipse Che
-echo -e "${YELLOW}Step 4: Deploying Eclipse Che with chectl${NC}"
-echo -e "${YELLOW}═══════════════════════════════════════════════════════════${NC}"
+if [ "${MANUAL_OLM}" = "true" ]; then
+    # Use manual OLM deployment (bypasses chectl timeout issues)
+    deploy_che_manual_olm
+else
+    # Use chectl deployment
+    echo -e "${YELLOW}Step 4: Deploying Eclipse Che with chectl${NC}"
+    echo -e "${YELLOW}═══════════════════════════════════════════════════════════${NC}"
 
-echo -e "${YELLOW}Running chectl server:deploy...${NC}"
-echo "This may take 5-10 minutes..."
-echo ""
+    echo -e "${YELLOW}Running chectl server:deploy...${NC}"
+    echo "This may take 5-10 minutes..."
+    echo ""
+fi
+
+# Skip chectl-specific logic if using manual OLM
+if [ "${MANUAL_OLM}" = "false" ]; then
 
 # Ensure API is reachable before invoking chectl (avoid false failures when proxy-url is down)
 if ! wait_for_oc_api 40 15; then
@@ -591,6 +802,8 @@ echo ""
 echo -e "${GREEN}✓ Che deployment initiated${NC}"
 echo ""
 
+fi  # End of chectl deployment section
+
 # Step 5: Wait for CheCluster to be created
 echo -e "${YELLOW}Step 5: Waiting for CheCluster resource${NC}"
 echo -e "${YELLOW}═══════════════════════════════════════════════════════════${NC}"
@@ -613,13 +826,14 @@ fi
 
 echo ""
 
-# Step 6: Patch dashboard image to PR-1442
-echo -e "${YELLOW}Step 6: Updating dashboard image to PR-1442${NC}"
-echo -e "${YELLOW}═══════════════════════════════════════════════════════════${NC}"
+# Step 6: Patch dashboard image to PR-1442 (skip if manual OLM, already done)
+if [ "${MANUAL_OLM}" = "false" ]; then
+    echo -e "${YELLOW}Step 6: Updating dashboard image to PR-1442${NC}"
+    echo -e "${YELLOW}═══════════════════════════════════════════════════════════${NC}"
 
-echo -e "${YELLOW}Patching CheCluster...${NC}"
+    echo -e "${YELLOW}Patching CheCluster...${NC}"
 
-oc patch checluster eclipse-che -n ${NAMESPACE} --type merge -p "
+    oc patch checluster eclipse-che -n ${NAMESPACE} --type merge -p "
 {
   \"spec\": {
     \"components\": {
@@ -636,8 +850,13 @@ oc patch checluster eclipse-che -n ${NAMESPACE} --type merge -p "
   }
 }"
 
-echo -e "${GREEN}✓ CheCluster patched with PR-1442 dashboard${NC}"
-echo ""
+    echo -e "${GREEN}✓ CheCluster patched with PR-1442 dashboard${NC}"
+    echo ""
+else
+    echo -e "${YELLOW}Step 6: Dashboard image already configured${NC}"
+    echo -e "${GREEN}✓ Dashboard image: ${DASHBOARD_IMAGE}${NC}"
+    echo ""
+fi
 
 # Step 7: Wait for deployment
 echo -e "${YELLOW}Step 7: Waiting for pods to be ready${NC}"

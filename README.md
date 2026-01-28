@@ -33,15 +33,81 @@ Run the automated deployment script:
 # Clone this repository
 git clone https://github.com/olexii4/deploy-che-ipv6-chectl.git
 cd deploy-che-ipv6-chectl
+```
 
-# Deploy upstream Eclipse Che with PR-1442 Dashboard
-./scripts/deploy-che-ipv6-chectl.sh --kubeconfig ~/ostest-kubeconfig.yaml
+**For Local CRC/OpenShift Local:**
 
-# Use dashboard image shortcuts (pr-XXXX, next, latest)
-./scripts/deploy-che-ipv6-chectl.sh --dashboard-image pr-1442 --kubeconfig ~/ostest-kubeconfig.yaml
+```bash
+# Deploy with dashboard PR (using shortcut)
+./scripts/deploy-che-ipv6-chectl.sh \
+  --skip-ipv6-check \
+  --skip-mirror \
+  --dashboard-image pr-1442
 
-# OR deploy CodeReady Workspaces (Red Hat downstream)
-./scripts/deploy-che-ipv6-chectl.sh --crw --kubeconfig ~/ostest-kubeconfig.yaml
+# Deploy with latest dashboard
+./scripts/deploy-che-ipv6-chectl.sh \
+  --skip-ipv6-check \
+  --skip-mirror \
+  --dashboard-image latest
+
+# Deploy CodeReady Workspaces locally
+./scripts/deploy-che-ipv6-chectl.sh \
+  --crw \
+  --skip-ipv6-check \
+  --skip-mirror
+```
+
+**For Remote IPv6-only Clusters (cluster-bot):**
+
+```bash
+# Deploy with manual OLM (recommended for IPv6-only)
+./scripts/deploy-che-ipv6-chectl.sh \
+  --kubeconfig ~/ostest-kubeconfig.yaml \
+  --dashboard-image pr-1442 \
+  --manual-olm
+
+# Deploy with longer timeout
+./scripts/deploy-che-ipv6-chectl.sh \
+  --kubeconfig ~/ostest-kubeconfig.yaml \
+  --dashboard-image pr-1442 \
+  --manual-olm \
+  --olm-timeout 900
+
+# Deploy CodeReady Workspaces on IPv6 cluster
+./scripts/deploy-che-ipv6-chectl.sh \
+  --crw \
+  --kubeconfig ~/ostest-kubeconfig.yaml \
+  --manual-olm
+```
+
+**Advanced Options:**
+
+```bash
+# Prefetch images to local cache before deployment (IPv6-only clusters)
+./scripts/deploy-che-ipv6-chectl.sh \
+  --prefetch-images \
+  --manual-olm \
+  --kubeconfig ~/ostest-kubeconfig.yaml
+
+# Use custom cache directory for prefetch + mirroring reuse
+./scripts/deploy-che-ipv6-chectl.sh \
+  --manual-olm \
+  --kubeconfig ~/ostest-kubeconfig.yaml \
+  --prefetch-images \
+  --cache-dir ~/.cache/che-ipv6-mirror
+
+# Choose mirroring mode for IPv6-only clusters
+# - full (default): includes DevWorkspace + UDI for workspace tests
+# - minimal: mirrors only core Che images (faster, but workspace creation may not work)
+./scripts/deploy-che-ipv6-chectl.sh \
+  --manual-olm \
+  --kubeconfig ~/ostest-kubeconfig.yaml \
+  --mirror-mode minimal
+
+# Auto-install chectl if missing (only needed for chectl method)
+./scripts/deploy-che-ipv6-chectl.sh \
+  --kubeconfig ~/ostest-kubeconfig.yaml \
+  --install-chectl
 ```
 
 **Deployment Methods:**
@@ -52,72 +118,41 @@ The script supports two deployment methods:
 - Uses `chectl server:deploy --installer operator`
 - Fast on stable networks
 - May timeout on IPv6-only or slow network clusters (120s timeout hardcoded in chectl)
+- Best for: Local CRC, dual-stack clusters with internet access
 
-**Method 2: Manual OLM (recommended for IPv6-only clusters)**
+**Method 2: Manual OLM (--manual-olm flag)**
 - Deploys via OLM directly without chectl
 - Configurable timeout (default: 600s vs chectl's 120s)
 - More reliable on slow networks, IPv6-only clusters, and cluster-bot deployments
 - Better progress logging
-
-```bash
-# Manual OLM deployment (recommended for IPv6-only clusters)
-./scripts/deploy-che-ipv6-chectl.sh \
-  --manual-olm \
-  --kubeconfig ~/ostest-kubeconfig.yaml
-
-# With custom timeout (15 minutes)
-./scripts/deploy-che-ipv6-chectl.sh \
-  --manual-olm \
-  --olm-timeout 900 \
-  --kubeconfig ~/ostest-kubeconfig.yaml
-
-# Auto-install chectl if missing (only needed for chectl method)
-./scripts/deploy-che-ipv6-chectl.sh --kubeconfig ~/ostest-kubeconfig.yaml --install-chectl
-
-# Predownload base images to local cache before touching the cluster (optional)
-# This helps when proxy connectivity is flaky during the deploy window.
-./scripts/deploy-che-ipv6-chectl.sh --prefetch-images --manual-olm
-
-# IPv6-only clusters: choose mirroring mode
-# - full (default): includes DevWorkspace + UDI for workspace tests
-# - minimal: mirrors only core Che images (faster, but workspace creation may not work)
-./scripts/deploy-che-ipv6-chectl.sh \
-  --manual-olm \
-  --kubeconfig ~/ostest-kubeconfig.yaml \
-  --mirror-mode minimal
-
-# Use a local cache directory for prefetch + mirroring reuse (optional)
-./scripts/deploy-che-ipv6-chectl.sh \
-  --manual-olm \
-  --kubeconfig ~/ostest-kubeconfig.yaml \
-  --prefetch-images \
-  --cache-dir ~/.cache/che-ipv6-mirror
-
-# Deploy CodeReady Workspaces (Red Hat downstream) instead of upstream Che
-./scripts/deploy-che-ipv6-chectl.sh \
-  --crw \
-  --manual-olm \
-  --kubeconfig ~/ostest-kubeconfig.yaml
-```
+- Best for: IPv6-only clusters, cluster-bot, slow networks
 
 **Dashboard Image Shortcuts:**
 
-The script supports convenient shortcuts for dashboard images:
+The script supports convenient shortcuts for dashboard images, similar to the local CRC deployment pattern:
+
+| Shortcut | Expands To (Upstream) | Expands To (with --crw) |
+|----------|----------------------|-------------------------|
+| `pr-1442` | `quay.io/eclipse/che-dashboard:pr-1442` | ⚠️ Uses quay.io (warning shown) |
+| `next` | `quay.io/eclipse/che-dashboard:next` | `registry.redhat.io/codeready-workspaces/crw-2-rhel8-dashboard:next` |
+| `latest` | `quay.io/eclipse/che-dashboard:latest` | `registry.redhat.io/codeready-workspaces/crw-2-rhel8-dashboard:latest` |
+| Full path | Used as-is | Used as-is |
+
+**Examples:**
 
 ```bash
-# Short form: pr-XXXX
+# Use shortcut (pr-XXXX)
 ./scripts/deploy-che-ipv6-chectl.sh --dashboard-image pr-1442
 
-# Expands to: quay.io/eclipse/che-dashboard:pr-1442
+# Use next (upstream)
+./scripts/deploy-che-ipv6-chectl.sh --dashboard-image next
+
+# Use latest with CRW (uses Red Hat registry)
+./scripts/deploy-che-ipv6-chectl.sh --crw --dashboard-image latest
+
+# Use full image path
+./scripts/deploy-che-ipv6-chectl.sh --dashboard-image quay.io/myorg/che-dashboard:custom
 ```
-
-Supported shortcuts:
-- `pr-XXXX` → `quay.io/eclipse/che-dashboard:pr-XXXX` (for upstream Che)
-- `next` → `quay.io/eclipse/che-dashboard:next` (for upstream Che)
-- `latest` → `quay.io/eclipse/che-dashboard:latest` (for upstream Che)
-- Full image path (used as-is)
-
-For CRW deployments (`--crw` flag), `next` and `latest` shortcuts use `registry.redhat.io/codeready-workspaces/crw-2-rhel8-dashboard`.
 
 **CodeReady Workspaces (--crw flag):**
 - Deploys Red Hat's downstream CodeReady Workspaces instead of upstream Eclipse Che
@@ -126,12 +161,25 @@ For CRW deployments (`--crw` flag), `next` and `latest` shortcuts use `registry.
 - Images from `registry.redhat.io` (requires Red Hat subscription)
 - Production-supported version for enterprise environments
 
-The script will:
-- ✅ Verify IPv6 cluster networking
+**Common Flags Reference:**
+
+| Flag | Use When | Example |
+|------|----------|---------|
+| `--skip-ipv6-check` | Local CRC, dual-stack clusters | ✅ Local development |
+| `--skip-mirror` | Cluster has internet access | ✅ CRC, dual-stack |
+| `--manual-olm` | IPv6-only, slow networks, cluster-bot | ✅ Cluster-bot deployments |
+| `--dashboard-image` | Testing specific PR or version | `pr-1442`, `next`, `latest` |
+| `--crw` | Deploy Red Hat CRW instead of upstream | ✅ Enterprise/production |
+| `--olm-timeout` | Need longer wait time | `900` (15 minutes) |
+| `--kubeconfig` | Remote cluster access | `~/ostest-kubeconfig.yaml` |
+
+**What the Script Does:**
+- ✅ Verify IPv6 cluster networking (unless `--skip-ipv6-check`)
 - ✅ Use kubeconfig `proxy-url` automatically (if present)
 - ✅ Check `chectl` is installed (or skip with `--manual-olm`)
-- ✅ Deploy Eclipse Che **via the operator** (chectl or manual OLM)
-- ✅ Configure dashboard with PR-1442 image (`quay.io/eclipse/che-dashboard:pr-1442`)
+- ✅ Deploy Eclipse Che/CRW **via the operator** (chectl or manual OLM)
+- ✅ Configure dashboard with specified image (default: `pr-1442`)
+- ✅ Mirror images on IPv6-only clusters (unless `--skip-mirror`)
 - ✅ Verify deployment and display Che URL
 
 See [deploy-che-ipv6-chectl.md](./scripts/deploy-che-ipv6-chectl.md) for detailed deployment documentation.

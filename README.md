@@ -172,14 +172,12 @@ Notes:
 - **[scripts/mirror-images-to-registry.sh](./scripts/mirror-images-to-registry.sh)** - Mirrors required images to the cluster registry (used automatically on IPv6-only clusters)
 - **[scripts/test-ipv6-validation.sh](./scripts/test-ipv6-validation.sh)** - Automated IPv6 validation test suite
 - **[scripts/diagnose-che-access.sh](./scripts/diagnose-che-access.sh)** - Diagnose and resolve Che dashboard access issues
-- **[scripts/create-che-proxy.sh](./scripts/create-che-proxy.sh)** - Create HTTP proxy pod for Che access via port-forward
 
 ### Documentation
 
 - **[deploy-che-ipv6-chectl.md](./scripts/deploy-che-ipv6-chectl.md)** - Comprehensive deployment guide
 - **[test-ipv6-validation.md](./scripts/test-ipv6-validation.md)** - Testing guide and test scenarios
 - **[diagnose-che-access.md](./scripts/diagnose-che-access.md)** - Troubleshooting dashboard access issues
-- **[create-che-proxy.md](./scripts/create-che-proxy.md)** - HTTP proxy pod setup guide
 - **[mirror-images-to-registry.md](./scripts/mirror-images-to-registry.md)** - Image mirroring documentation
 
 ## Recent Changes (2026-01)
@@ -212,12 +210,10 @@ Notes:
   - Trimmed base image set to essential images only
 
 ### Access & Diagnostics
-- **New proxy pod approach**:
-  - Added `create-che-proxy.sh` to create nginx proxy pod for Che access via port-forward
-  - Alternative to SOCKS proxy when VPN/bastion access is not available
 - **Enhanced diagnostics**:
   - `diagnose-che-access.sh` tests cluster-internal access, DNS resolution, and network connectivity
   - Provides specific solutions based on failure mode (SOCKS proxy, /etc/hosts, OpenShift Console)
+  - **Note**: Port-forward access does not work for Che login due to OAuth redirect URI mismatch
 
 ### Documentation
 - All scripts now have corresponding `.md` documentation files in `scripts/` directory

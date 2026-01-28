@@ -789,81 +789,111 @@ else
     CHECTL_NO_PROXY="127.0.0.1,localhost,::1"
 fi
 
-set +e
-KUBECONFIG="${CHECTL_KUBECONFIG}" HTTPS_PROXY="${PROXY_URL:-}" HTTP_PROXY="${PROXY_URL:-}" NO_PROXY="${CHECTL_NO_PROXY}" chectl server:deploy \
-    --platform openshift \
-    --installer operator \
-    --batch \
-    --telemetry off \
-    --chenamespace "${NAMESPACE}" \
-    --che-operator-image "${CHE_OPERATOR_IMAGE}"
-CHECTL_RC=$?
-set -e
+# chectl deployment with retry logic and timeout management
+# chectl has hardcoded 120s timeout for subscription readiness (src/api/kube-client.ts:1395)
+# We kill the process before timeout and retry up to 3 times
+CHECTL_MAX_RETRIES=3
+CHECTL_TIMEOUT_SECONDS=110  # Kill before chectl's 120s timeout
+CHECTL_ATTEMPT=1
 
-if [ "${CHECTL_RC}" -ne 0 ]; then
-    echo ""
-    echo -e "${YELLOW}⚠ chectl deploy failed (exit ${CHECTL_RC}).${NC}"
-    if ! oc whoami >/dev/null 2>&1; then
-        echo -e "${YELLOW}  Cluster API is currently unreachable (proxy-url timeout). Waiting and retrying chectl once...${NC}"
-        if ! wait_for_oc_api 40 15; then
-            echo -e "${RED}Error: OpenShift API still unreachable; cannot continue deployment.${NC}"
-            exit 1
-        fi
-        echo -e "${YELLOW}Retrying chectl server:deploy...${NC}"
-        set +e
-        KUBECONFIG="${CHECTL_KUBECONFIG}" HTTPS_PROXY="${PROXY_URL:-}" HTTP_PROXY="${PROXY_URL:-}" NO_PROXY="${CHECTL_NO_PROXY}" chectl server:deploy \
-            --platform openshift \
-            --installer operator \
-            --batch \
-            --telemetry off \
-            --chenamespace "${NAMESPACE}" \
-            --che-operator-image "${CHE_OPERATOR_IMAGE}"
-        CHECTL_RC=$?
-        set -e
-        if [ "${CHECTL_RC}" -ne 0 ]; then
-            echo -e "${RED}Error: chectl deploy failed again (exit ${CHECTL_RC}).${NC}"
-            exit "${CHECTL_RC}"
-        fi
-    else
-        echo -e "${YELLOW}  On IPv6-only clusters this is often caused by missing mirrored images (CatalogSource, bundle-unpack, gateway sidecars).${NC}"
-        echo -e "${YELLOW}  Attempting to mirror images discovered from cluster namespaces and retry once...${NC}"
+deploy_with_chectl() {
+    local attempt=$1
+    local allow_timeout=$2
 
-        SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-        MIRROR_SCRIPT="${SCRIPT_DIR}/mirror-images-to-registry.sh"
-        REMEDIATE_ARGS=( --namespace "${NAMESPACE}" --dashboard-image "${DASHBOARD_IMAGE}" --mode "full" )
-        if [ -n "${KUBECONFIG_FILE}" ]; then
-            REMEDIATE_ARGS+=( --kubeconfig "${KUBECONFIG_FILE}" )
-        fi
-        REMEDIATE_ARGS+=( --cache-dir "${CACHE_DIR}" )
-        if [ -n "${LOCAL_REGISTRY}" ]; then
-            REMEDIATE_ARGS+=( --registry "${LOCAL_REGISTRY}" )
-        fi
-        if [ -n "${QUAY_CREDS}" ]; then
-            REMEDIATE_ARGS+=( --quay-creds "${QUAY_CREDS}" )
-        fi
-        # Discover what the cluster is actually trying to pull.
-        REMEDIATE_ARGS+=( --mirror-from-namespace "openshift-marketplace" --mirror-from-namespace "openshift-operators" --mirror-from-namespace "${NAMESPACE}" )
+    echo -e "${YELLOW}Attempt ${attempt}/${CHECTL_MAX_RETRIES}: Running chectl server:deploy...${NC}"
 
-        bash "$MIRROR_SCRIPT" "${REMEDIATE_ARGS[@]}"
+    # Start chectl in background
+    set +e
+    KUBECONFIG="${CHECTL_KUBECONFIG}" HTTPS_PROXY="${PROXY_URL:-}" HTTP_PROXY="${PROXY_URL:-}" NO_PROXY="${CHECTL_NO_PROXY}" chectl server:deploy \
+        --platform openshift \
+        --installer operator \
+        --batch \
+        --telemetry off \
+        --chenamespace "${NAMESPACE}" \
+        --che-operator-image "${CHE_OPERATOR_IMAGE}" &
 
-        echo -e "${YELLOW}Retrying chectl server:deploy...${NC}"
-        set +e
-        KUBECONFIG="${CHECTL_KUBECONFIG}" HTTPS_PROXY="${PROXY_URL:-}" HTTP_PROXY="${PROXY_URL:-}" NO_PROXY="${CHECTL_NO_PROXY}" chectl server:deploy \
-            --platform openshift \
-            --installer operator \
-            --batch \
-            --telemetry off \
-            --chenamespace "${NAMESPACE}" \
-            --che-operator-image "${CHE_OPERATOR_IMAGE}"
-        CHECTL_RC=$?
-        set -e
+    CHECTL_PID=$!
+    echo "  chectl PID: ${CHECTL_PID}"
 
-        if [ "${CHECTL_RC}" -ne 0 ]; then
-            echo -e "${RED}Error: chectl deploy failed again (exit ${CHECTL_RC}).${NC}"
-            exit "${CHECTL_RC}"
+    # Monitor chectl with timeout
+    local elapsed=0
+    while kill -0 ${CHECTL_PID} 2>/dev/null; do
+        if [ ${elapsed} -ge ${CHECTL_TIMEOUT_SECONDS} ] && [ "${allow_timeout}" = "false" ]; then
+            echo -e "${YELLOW}  Timeout reached (${CHECTL_TIMEOUT_SECONDS}s), killing chectl PID ${CHECTL_PID} to prevent hardcoded timeout error...${NC}"
+            kill -TERM ${CHECTL_PID} 2>/dev/null || true
+            sleep 2
+            kill -KILL ${CHECTL_PID} 2>/dev/null || true
+            wait ${CHECTL_PID} 2>/dev/null || true
+            return 124  # Timeout exit code
         fi
+        sleep 1
+        elapsed=$((elapsed + 1))
+    done
+
+    # Get chectl exit code
+    wait ${CHECTL_PID}
+    CHECTL_RC=$?
+    set -e
+
+    return ${CHECTL_RC}
+}
+
+# Try deployment up to 3 times
+while [ ${CHECTL_ATTEMPT} -le ${CHECTL_MAX_RETRIES} ]; do
+    ALLOW_TIMEOUT="false"
+    if [ ${CHECTL_ATTEMPT} -eq ${CHECTL_MAX_RETRIES} ]; then
+        ALLOW_TIMEOUT="true"
+        echo -e "${YELLOW}Final attempt - allowing full timeout if needed${NC}"
     fi
-fi
+
+    deploy_with_chectl ${CHECTL_ATTEMPT} ${ALLOW_TIMEOUT}
+    CHECTL_RC=$?
+
+    if [ ${CHECTL_RC} -eq 0 ]; then
+        echo -e "${GREEN}✓ chectl deployment succeeded on attempt ${CHECTL_ATTEMPT}${NC}"
+        break
+    fi
+
+    echo ""
+    echo -e "${YELLOW}⚠ chectl deploy failed on attempt ${CHECTL_ATTEMPT} (exit ${CHECTL_RC})${NC}"
+
+    if [ ${CHECTL_ATTEMPT} -lt ${CHECTL_MAX_RETRIES} ]; then
+        if [ ${CHECTL_RC} -eq 124 ]; then
+            echo -e "${YELLOW}  Deployment timed out - chectl will continue from where it left off${NC}"
+        else
+            echo -e "${YELLOW}  Attempting to remediate by discovering and mirroring missing images...${NC}"
+
+            SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+            MIRROR_SCRIPT="${SCRIPT_DIR}/mirror-images-to-registry.sh"
+            REMEDIATE_ARGS=( --namespace "${NAMESPACE}" --dashboard-image "${DASHBOARD_IMAGE}" --mode "full" )
+            if [ -n "${KUBECONFIG_FILE}" ]; then
+                REMEDIATE_ARGS+=( --kubeconfig "${KUBECONFIG_FILE}" )
+            fi
+            REMEDIATE_ARGS+=( --cache-dir "${CACHE_DIR}" )
+            if [ -n "${LOCAL_REGISTRY}" ]; then
+                REMEDIATE_ARGS+=( --registry "${LOCAL_REGISTRY}" )
+            fi
+            if [ -n "${QUAY_CREDS}" ]; then
+                REMEDIATE_ARGS+=( --quay-creds "${QUAY_CREDS}" )
+            fi
+            # Discover what the cluster is actually trying to pull
+            REMEDIATE_ARGS+=( --mirror-from-namespace "openshift-marketplace" --mirror-from-namespace "openshift-operators" --mirror-from-namespace "${NAMESPACE}" )
+
+            set +e
+            bash "$MIRROR_SCRIPT" "${REMEDIATE_ARGS[@]}"
+            set -e
+        fi
+
+        # Wait for cluster to stabilize
+        echo -e "${YELLOW}  Waiting 10 seconds before retry...${NC}"
+        sleep 10
+
+        CHECTL_ATTEMPT=$((CHECTL_ATTEMPT + 1))
+    else
+        echo -e "${RED}Error: chectl deploy failed after ${CHECTL_MAX_RETRIES} attempts (exit ${CHECTL_RC})${NC}"
+        exit "${CHECTL_RC}"
+    fi
+done
 
 echo ""
 echo -e "${GREEN}✓ Che deployment initiated${NC}"

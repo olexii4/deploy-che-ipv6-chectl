@@ -358,7 +358,7 @@ yarn test factory-location-adapter
 
 ### ⚠️ Known Limitations
 
-1. **IPv4-Only Clusters (CRC, Minikube)**
+1. **IPv4-Only Clusters**
    - URL validation works ✅
    - Cannot actually connect to IPv6 services ❌
    - Backend binds to `::` but only IPv4 is available
@@ -395,7 +395,7 @@ kubectl set image deployment/che-dashboard -n eclipse-che \
 
 ### Issue 2: Cannot Connect to IPv6 URLs
 
-**Cause:** Cluster is IPv4-only (expected on CRC, Minikube)
+**Cause:** Cluster is IPv4-only (expected on some local clusters)
 
 **Explanation:**
 
@@ -464,7 +464,7 @@ Document your test results:
 ## Test Execution: YYYY-MM-DD
 
 **Environment:**
-- Cluster Type: Kind/GKE/EKS/CRC
+- Cluster Type: OpenShift/GKE/EKS
 - Kubernetes Version: v1.29.0
 - Dashboard Image: quay.io/eclipse/che-dashboard:pr-1442
 - IPv6 Support: Dual-stack / IPv4-only

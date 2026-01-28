@@ -106,29 +106,6 @@ launch 4.20.2 metal,ipv6
 
 5. **Cluster Lifetime:** Cluster bot clusters are temporary (typically 4-6 hours)
 
-### Option 2: OpenShift Local (CRC) - Limited IPv6 Support
-
-> ⚠️ **Warning:** CRC does not support IPv6 networking (IPv4-only). Use CRC only for testing URL validation features, not for actual IPv6 connectivity.
-
-```bash
-# Start CRC
-crc start
-
-# Configure oc
-eval $(crc oc-env)
-
-# Login
-oc login -u kubeadmin https://api.crc.testing:6443
-```
-
-**CRC Limitations:**
-- ✅ IPv6 URL validation works
-- ✅ Backend binds to `::` (dual-stack ready)
-- ❌ No IPv6 services (cluster is IPv4-only)
-- ❌ Cannot test actual IPv6 connectivity
-
-For comprehensive IPv6 testing, use cluster bot with `metal,ipv6` or cloud platforms.
-
 ---
 
 ## Prerequisites

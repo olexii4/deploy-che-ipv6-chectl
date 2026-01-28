@@ -35,31 +35,7 @@ git clone https://github.com/olexii4/deploy-che-ipv6-chectl.git
 cd deploy-che-ipv6-chectl
 ```
 
-**For Local/Test Clusters (CRC, SNO):**
-
-Use the simplified `deploy-local.sh` script for local development:
-
-```bash
-# Deploy Eclipse Che on CRC (ARM64 Mac)
-./scripts/deploy-local.sh \
-  --dashboard-image pr-1442 \
-  --arm64-gateway
-
-# Deploy CodeReady Workspaces
-./scripts/deploy-local.sh \
-  --crw \
-  --dashboard-image latest
-
-# Clean redeploy
-./scripts/deploy-local.sh \
-  --dashboard-image pr-1442 \
-  --cleanup \
-  --arm64-gateway
-```
-
-**Note:** CRC (OpenShift Local) is IPv4-only. For IPv6 testing, use cluster-bot.
-
-**For Remote IPv6-only Clusters (cluster-bot):**
+**For IPv6 Clusters (cluster-bot):**
 
 ```bash
 # Deploy with manual OLM (recommended for IPv6-only)
@@ -120,7 +96,7 @@ The script supports two deployment methods:
 - Uses `chectl server:deploy --installer operator`
 - Fast on stable networks
 - May timeout on IPv6-only or slow network clusters (120s timeout hardcoded in chectl)
-- Best for: Local CRC, dual-stack clusters with internet access
+- Best for: Dual-stack clusters with internet access
 
 **Method 2: Manual OLM (--manual-olm flag)**
 - Deploys via OLM directly without chectl
@@ -131,7 +107,7 @@ The script supports two deployment methods:
 
 **Dashboard Image Shortcuts:**
 
-The script supports convenient shortcuts for dashboard images, similar to the local CRC deployment pattern:
+The script supports convenient shortcuts for dashboard images:
 
 | Shortcut | Expands To (Upstream) | Expands To (with --crw) |
 |----------|----------------------|-------------------------|
@@ -167,8 +143,8 @@ The script supports convenient shortcuts for dashboard images, similar to the lo
 
 | Flag | Use When | Example |
 |------|----------|---------|
-| `--skip-ipv6-check` | Local CRC, dual-stack clusters | ✅ Local development |
-| `--skip-mirror` | Cluster has internet access | ✅ CRC, dual-stack |
+| `--skip-ipv6-check` | Dual-stack clusters | ✅ Local development |
+| `--skip-mirror` | Cluster has internet access | ✅ Dual-stack clusters |
 | `--manual-olm` | IPv6-only, slow networks, cluster-bot | ✅ Cluster-bot deployments |
 | `--dashboard-image` | Testing specific PR or version | `pr-1442`, `next`, `latest` |
 | `--crw` | Deploy Red Hat CRW instead of upstream | ✅ Enterprise/production |
@@ -303,7 +279,6 @@ Notes:
 ### Scripts
 
 - **[scripts/deploy-che-ipv6.sh](./scripts/deploy-che-ipv6.sh)** - Full IPv6 cluster deployment with image mirroring
-- **[scripts/deploy-local.sh](./scripts/deploy-local.sh)** - Simplified deployment for local/test clusters (CRC, SNO)
 - **[scripts/mirror-images-to-registry.sh](./scripts/mirror-images-to-registry.sh)** - Mirrors required images to the cluster registry (used automatically on IPv6-only clusters)
 - **[scripts/test-ipv6-validation.sh](./scripts/test-ipv6-validation.sh)** - Automated IPv6 validation test suite
 - **[scripts/diagnose-che-access.sh](./scripts/diagnose-che-access.sh)** - Diagnose and resolve Che dashboard access issues
@@ -311,7 +286,6 @@ Notes:
 ### Documentation
 
 - **[deploy-che-ipv6.md](./scripts/deploy-che-ipv6.md)** - IPv6 cluster deployment guide (cluster-bot)
-- **[deploy-local.md](./scripts/deploy-local.md)** - Local/test cluster deployment guide (CRC, SNO)
 - **[test-ipv6-validation.md](./scripts/test-ipv6-validation.md)** - Testing guide and test scenarios
 - **[diagnose-che-access.md](./scripts/diagnose-che-access.md)** - Troubleshooting dashboard access issues
 - **[mirror-images-to-registry.md](./scripts/mirror-images-to-registry.md)** - Image mirroring documentation

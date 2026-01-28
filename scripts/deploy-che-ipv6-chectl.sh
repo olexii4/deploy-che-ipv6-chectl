@@ -34,6 +34,7 @@
 #   --kubeconfig <file>          Path to kubeconfig file (uses proxy-url from kubeconfig)
 #   --namespace <namespace>      Che namespace (default: eclipse-che for upstream, openshift-workspaces for CRW)
 #   --dashboard-image <image>    Dashboard image (default: quay.io/eclipse/che-dashboard:pr-1442)
+#                                Shortcuts: pr-XXXX, next, latest (e.g., --dashboard-image pr-1442)
 #   --che-operator-image <image> Che operator image (default: quay.io/eclipse/che-operator:next)
 #   --crw                        Deploy CodeReady Workspaces (Red Hat downstream) instead of upstream Eclipse Che
 #   --install-chectl             Install chectl automatically if missing (best-effort)
@@ -474,6 +475,30 @@ else
     OPERATOR_NAME="eclipse-che"
     CATALOG_SOURCE_NAME="eclipse-che"
     CATALOG_SOURCE_NAMESPACE="openshift-marketplace"
+fi
+
+# Process dashboard image shortcuts (e.g., pr-1442, next, latest)
+# This allows users to use short forms like --dashboard-image pr-1442
+# instead of the full quay.io/eclipse/che-dashboard:pr-1442
+if [[ -n "$DASHBOARD_IMAGE" ]]; then
+    if [[ "$DASHBOARD_IMAGE" =~ ^pr-[0-9]+$ ]]; then
+        # Convert pr-XXXX to full image path
+        if [ "${DEPLOY_CRW}" = "true" ]; then
+            echo -e "${YELLOW}Warning: Dashboard image shortcut '$DASHBOARD_IMAGE' may not work with --crw flag${NC}"
+            echo -e "${YELLOW}         Consider using full CRW dashboard image path instead${NC}"
+        fi
+        DASHBOARD_IMAGE="quay.io/eclipse/che-dashboard:$DASHBOARD_IMAGE"
+    elif [[ "$DASHBOARD_IMAGE" == "next" || "$DASHBOARD_IMAGE" == "latest" ]]; then
+        # Convert next/latest to full image path
+        if [ "${DEPLOY_CRW}" = "true" ]; then
+            # For CRW, use Red Hat registry
+            DASHBOARD_IMAGE="registry.redhat.io/codeready-workspaces/crw-2-rhel8-dashboard:${DASHBOARD_IMAGE}"
+        else
+            # For upstream Che, use quay.io
+            DASHBOARD_IMAGE="quay.io/eclipse/che-dashboard:$DASHBOARD_IMAGE"
+        fi
+    fi
+    # Otherwise use the image path as-is (already a full path)
 fi
 
 if [ "${MIRROR_MODE}" != "minimal" ] && [ "${MIRROR_MODE}" != "full" ]; then

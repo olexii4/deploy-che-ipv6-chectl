@@ -37,6 +37,9 @@ cd deploy-che-ipv6-chectl
 # Deploy upstream Eclipse Che with PR-1442 Dashboard
 ./scripts/deploy-che-ipv6-chectl.sh --kubeconfig ~/ostest-kubeconfig.yaml
 
+# Use dashboard image shortcuts (pr-XXXX, next, latest)
+./scripts/deploy-che-ipv6-chectl.sh --dashboard-image pr-1442 --kubeconfig ~/ostest-kubeconfig.yaml
+
 # OR deploy CodeReady Workspaces (Red Hat downstream)
 ./scripts/deploy-che-ipv6-chectl.sh --crw --kubeconfig ~/ostest-kubeconfig.yaml
 ```
@@ -96,6 +99,25 @@ The script supports two deployment methods:
   --manual-olm \
   --kubeconfig ~/ostest-kubeconfig.yaml
 ```
+
+**Dashboard Image Shortcuts:**
+
+The script supports convenient shortcuts for dashboard images:
+
+```bash
+# Short form: pr-XXXX
+./scripts/deploy-che-ipv6-chectl.sh --dashboard-image pr-1442
+
+# Expands to: quay.io/eclipse/che-dashboard:pr-1442
+```
+
+Supported shortcuts:
+- `pr-XXXX` → `quay.io/eclipse/che-dashboard:pr-XXXX` (for upstream Che)
+- `next` → `quay.io/eclipse/che-dashboard:next` (for upstream Che)
+- `latest` → `quay.io/eclipse/che-dashboard:latest` (for upstream Che)
+- Full image path (used as-is)
+
+For CRW deployments (`--crw` flag), `next` and `latest` shortcuts use `registry.redhat.io/codeready-workspaces/crw-2-rhel8-dashboard`.
 
 **CodeReady Workspaces (--crw flag):**
 - Deploys Red Hat's downstream CodeReady Workspaces instead of upstream Eclipse Che

@@ -35,27 +35,29 @@ git clone https://github.com/olexii4/deploy-che-ipv6-chectl.git
 cd deploy-che-ipv6-chectl
 ```
 
-**For Local CRC/OpenShift Local:**
+**For Local/Test Clusters (CRC, SNO):**
+
+Use the simplified `deploy-local.sh` script for local development:
 
 ```bash
-# Deploy with dashboard PR (using shortcut)
-./scripts/deploy-che-ipv6.sh \
-  --skip-ipv6-check \
-  --skip-mirror \
-  --dashboard-image pr-1442
+# Deploy Eclipse Che on CRC (ARM64 Mac)
+./scripts/deploy-local.sh \
+  --dashboard-image pr-1442 \
+  --arm64-gateway
 
-# Deploy with latest dashboard
-./scripts/deploy-che-ipv6.sh \
-  --skip-ipv6-check \
-  --skip-mirror \
+# Deploy CodeReady Workspaces
+./scripts/deploy-local.sh \
+  --crw \
   --dashboard-image latest
 
-# Deploy CodeReady Workspaces locally
-./scripts/deploy-che-ipv6.sh \
-  --crw \
-  --skip-ipv6-check \
-  --skip-mirror
+# Clean redeploy
+./scripts/deploy-local.sh \
+  --dashboard-image pr-1442 \
+  --cleanup \
+  --arm64-gateway
 ```
+
+**Note:** CRC (OpenShift Local) is IPv4-only. For IPv6 testing, use cluster-bot.
 
 **For Remote IPv6-only Clusters (cluster-bot):**
 
@@ -300,14 +302,16 @@ Notes:
 
 ### Scripts
 
-- **[scripts/deploy-che-ipv6.sh](./scripts/deploy-che-ipv6.sh)** - Automated deployment script
+- **[scripts/deploy-che-ipv6.sh](./scripts/deploy-che-ipv6.sh)** - Full IPv6 cluster deployment with image mirroring
+- **[scripts/deploy-local.sh](./scripts/deploy-local.sh)** - Simplified deployment for local/test clusters (CRC, SNO)
 - **[scripts/mirror-images-to-registry.sh](./scripts/mirror-images-to-registry.sh)** - Mirrors required images to the cluster registry (used automatically on IPv6-only clusters)
 - **[scripts/test-ipv6-validation.sh](./scripts/test-ipv6-validation.sh)** - Automated IPv6 validation test suite
 - **[scripts/diagnose-che-access.sh](./scripts/diagnose-che-access.sh)** - Diagnose and resolve Che dashboard access issues
 
 ### Documentation
 
-- **[deploy-che-ipv6.md](./scripts/deploy-che-ipv6.md)** - Comprehensive deployment guide
+- **[deploy-che-ipv6.md](./scripts/deploy-che-ipv6.md)** - IPv6 cluster deployment guide (cluster-bot)
+- **[deploy-local.md](./scripts/deploy-local.md)** - Local/test cluster deployment guide (CRC, SNO)
 - **[test-ipv6-validation.md](./scripts/test-ipv6-validation.md)** - Testing guide and test scenarios
 - **[diagnose-che-access.md](./scripts/diagnose-che-access.md)** - Troubleshooting dashboard access issues
 - **[mirror-images-to-registry.md](./scripts/mirror-images-to-registry.md)** - Image mirroring documentation

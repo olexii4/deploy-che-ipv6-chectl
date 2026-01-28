@@ -25,7 +25,7 @@ cat > ~/ostest-kubeconfig.yaml << 'EOF'
 EOF
 ```
 
-**2. Deploy Eclipse Che with PR-1442 Dashboard**
+**2. Deploy Eclipse Che or CodeReady Workspaces**
 
 Run the automated deployment script:
 
@@ -34,8 +34,11 @@ Run the automated deployment script:
 git clone https://github.com/olexii4/deploy-che-ipv6-chectl.git
 cd deploy-che-ipv6-chectl
 
-# Run deployment script with kubeconfig
+# Deploy upstream Eclipse Che with PR-1442 Dashboard
 ./scripts/deploy-che-ipv6-chectl.sh --kubeconfig ~/ostest-kubeconfig.yaml
+
+# OR deploy CodeReady Workspaces (Red Hat downstream)
+./scripts/deploy-che-ipv6-chectl.sh --crw --kubeconfig ~/ostest-kubeconfig.yaml
 ```
 
 **Deployment Methods:**
@@ -86,7 +89,20 @@ The script supports two deployment methods:
   --kubeconfig ~/ostest-kubeconfig.yaml \
   --prefetch-images \
   --cache-dir ~/.cache/che-ipv6-mirror
+
+# Deploy CodeReady Workspaces (Red Hat downstream) instead of upstream Che
+./scripts/deploy-che-ipv6-chectl.sh \
+  --crw \
+  --manual-olm \
+  --kubeconfig ~/ostest-kubeconfig.yaml
 ```
+
+**CodeReady Workspaces (--crw flag):**
+- Deploys Red Hat's downstream CodeReady Workspaces instead of upstream Eclipse Che
+- Uses `redhat-operators` catalog (pre-installed on OpenShift)
+- Default namespace: `openshift-workspaces`
+- Images from `registry.redhat.io` (requires Red Hat subscription)
+- Production-supported version for enterprise environments
 
 The script will:
 - ✅ Verify IPv6 cluster networking

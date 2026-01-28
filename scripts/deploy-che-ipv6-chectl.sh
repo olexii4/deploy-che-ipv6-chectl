@@ -32,9 +32,10 @@
 #
 # Options:
 #   --kubeconfig <file>          Path to kubeconfig file (uses proxy-url from kubeconfig)
-#   --namespace <namespace>      Che namespace (default: eclipse-che)
+#   --namespace <namespace>      Che namespace (default: eclipse-che for upstream, openshift-workspaces for CRW)
 #   --dashboard-image <image>    Dashboard image (default: quay.io/eclipse/che-dashboard:pr-1442)
 #   --che-operator-image <image> Che operator image (default: quay.io/eclipse/che-operator:next)
+#   --crw                        Deploy CodeReady Workspaces (Red Hat downstream) instead of upstream Eclipse Che
 #   --install-chectl             Install chectl automatically if missing (best-effort)
 #   --manual-olm                 Deploy Eclipse Che manually via OLM (bypasses chectl, avoids 120s timeout)
 #   --olm-timeout <seconds>      Timeout for OLM subscription readiness (default: 600, only with --manual-olm)
@@ -61,9 +62,10 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Default configuration
-NAMESPACE="${CHE_NAMESPACE:-eclipse-che}"
-DASHBOARD_IMAGE="${DASHBOARD_IMAGE:-quay.io/eclipse/che-dashboard:pr-1442}"
-CHE_OPERATOR_IMAGE="${CHE_OPERATOR_IMAGE:-quay.io/eclipse/che-operator:next}"
+DEPLOY_CRW=false
+NAMESPACE=""
+DASHBOARD_IMAGE=""
+CHE_OPERATOR_IMAGE=""
 SKIP_IPV6_CHECK=false
 SKIP_MIRROR=false
 LOCAL_REGISTRY=""
@@ -192,10 +194,10 @@ wait_for_local_oc_proxy() {
 }
 
 deploy_che_manual_olm() {
-    # Deploy Eclipse Che manually via OLM without chectl
+    # Deploy Eclipse Che or CodeReady Workspaces manually via OLM without chectl
     # This bypasses chectl's hardcoded 120-second subscription timeout
 
-    echo -e "${YELLOW}Step 4: Deploying Eclipse Che manually via OLM${NC}"
+    echo -e "${YELLOW}Step 4: Deploying ${PRODUCT_NAME} manually via OLM${NC}"
     echo -e "${YELLOW}═══════════════════════════════════════════════════════════${NC}"
     echo ""
 
@@ -213,39 +215,42 @@ deploy_che_manual_olm() {
     echo -e "${BLUE}[2/6] Verifying CatalogSources${NC}"
     local catalog_timeout=120
 
-    # Wait for eclipse-che catalog
-    echo "  Waiting for eclipse-che CatalogSource..."
+    # Wait for main operator catalog
+    echo "  Waiting for ${CATALOG_SOURCE_NAME} CatalogSource..."
     for ((i=1; i<=$catalog_timeout; i++)); do
-        if oc get catalogsource eclipse-che -n openshift-marketplace &>/dev/null; then
-            local catalog_state=$(oc get catalogsource eclipse-che -n openshift-marketplace -o jsonpath='{.status.connectionState.lastObservedState}' 2>/dev/null || echo "")
+        if oc get catalogsource ${CATALOG_SOURCE_NAME} -n ${CATALOG_SOURCE_NAMESPACE} &>/dev/null; then
+            local catalog_state=$(oc get catalogsource ${CATALOG_SOURCE_NAME} -n ${CATALOG_SOURCE_NAMESPACE} -o jsonpath='{.status.connectionState.lastObservedState}' 2>/dev/null || echo "")
             if [ "${catalog_state}" == "READY" ]; then
-                echo -e "${GREEN}✓ eclipse-che CatalogSource is READY${NC}"
+                echo -e "${GREEN}✓ ${CATALOG_SOURCE_NAME} CatalogSource is READY${NC}"
                 break
             fi
         fi
         if [ $i -eq $catalog_timeout ]; then
-            echo -e "${RED}✗ Timeout waiting for eclipse-che CatalogSource${NC}"
+            echo -e "${RED}✗ Timeout waiting for ${CATALOG_SOURCE_NAME} CatalogSource${NC}"
+            echo "  Check if catalog exists: oc get catalogsource -n ${CATALOG_SOURCE_NAMESPACE}"
             exit 1
         fi
         sleep 1
     done
 
-    # Wait for devworkspace-operator catalog
-    echo "  Waiting for devworkspace-operator CatalogSource..."
-    for ((i=1; i<=$catalog_timeout; i++)); do
-        if oc get catalogsource devworkspace-operator -n openshift-marketplace &>/dev/null 2>&1; then
-            local catalog_state=$(oc get catalogsource devworkspace-operator -n openshift-marketplace -o jsonpath='{.status.connectionState.lastObservedState}' 2>/dev/null || echo "")
-            if [ "${catalog_state}" == "READY" ]; then
-                echo -e "${GREEN}✓ devworkspace-operator CatalogSource is READY${NC}"
+    # For upstream Che, also wait for devworkspace-operator catalog
+    if [ "${DEPLOY_CRW}" != "true" ]; then
+        echo "  Waiting for devworkspace-operator CatalogSource..."
+        for ((i=1; i<=$catalog_timeout; i++)); do
+            if oc get catalogsource devworkspace-operator -n openshift-marketplace &>/dev/null 2>&1; then
+                local catalog_state=$(oc get catalogsource devworkspace-operator -n openshift-marketplace -o jsonpath='{.status.connectionState.lastObservedState}' 2>/dev/null || echo "")
+                if [ "${catalog_state}" == "READY" ]; then
+                    echo -e "${GREEN}✓ devworkspace-operator CatalogSource is READY${NC}"
+                    break
+                fi
+            fi
+            if [ $i -eq $catalog_timeout ]; then
+                echo -e "${YELLOW}⚠ devworkspace-operator CatalogSource not ready, continuing anyway${NC}"
                 break
             fi
-        fi
-        if [ $i -eq $catalog_timeout ]; then
-            echo -e "${YELLOW}⚠ devworkspace-operator CatalogSource not ready, continuing anyway${NC}"
-            break
-        fi
-        sleep 1
-    done
+            sleep 1
+        done
+    fi
     echo ""
 
     # Step 4c: Create DevWorkspace subscription
@@ -295,49 +300,56 @@ EOF
     fi
     echo ""
 
-    # Step 4e: Create Eclipse Che subscription
-    echo -e "${BLUE}[5/6] Creating Eclipse Che subscription${NC}"
+    # Step 4e: Create operator subscription
+    echo -e "${BLUE}[5/6] Creating ${PRODUCT_NAME} subscription${NC}"
+
+    # Determine channel based on product
+    local channel="next"
+    if [ "${DEPLOY_CRW}" = "true" ]; then
+        channel="stable"
+    fi
+
     cat <<EOF | oc apply -f -
 apiVersion: operators.coreos.com/v1alpha1
 kind: Subscription
 metadata:
-  name: eclipse-che
+  name: ${OPERATOR_NAME}
   namespace: ${NAMESPACE}
 spec:
-  channel: next
+  channel: ${channel}
   installPlanApproval: Automatic
-  name: eclipse-che
-  source: eclipse-che
-  sourceNamespace: openshift-marketplace
+  name: ${OPERATOR_NAME}
+  source: ${CATALOG_SOURCE_NAME}
+  sourceNamespace: ${CATALOG_SOURCE_NAMESPACE}
 EOF
-    echo -e "${GREEN}✓ Eclipse Che subscription created${NC}"
+    echo -e "${GREEN}✓ ${PRODUCT_NAME} subscription created${NC}"
     echo ""
 
-    # Step 4f: Wait for Eclipse Che CSV
-    echo -e "${BLUE}[6/6] Waiting for Eclipse Che CSV (timeout: ${OLM_TIMEOUT}s)${NC}"
+    # Step 4f: Wait for operator CSV
+    echo -e "${BLUE}[6/6] Waiting for ${PRODUCT_NAME} CSV (timeout: ${OLM_TIMEOUT}s)${NC}"
     csv_found=false
     for ((i=1; i<=$OLM_TIMEOUT; i++)); do
-        local csv=$(oc get subscription eclipse-che -n ${NAMESPACE} -o jsonpath='{.status.installedCSV}' 2>/dev/null || echo "")
+        local csv=$(oc get subscription ${OPERATOR_NAME} -n ${NAMESPACE} -o jsonpath='{.status.installedCSV}' 2>/dev/null || echo "")
         if [ -n "${csv}" ]; then
             echo "  Found CSV: ${csv}"
             local csv_phase=$(oc get csv "${csv}" -n ${NAMESPACE} -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
             echo "  CSV Phase: ${csv_phase}"
             if [ "${csv_phase}" == "Succeeded" ]; then
-                echo -e "${GREEN}✓ Eclipse Che Operator installed successfully${NC}"
+                echo -e "${GREEN}✓ ${PRODUCT_NAME} Operator installed successfully${NC}"
                 csv_found=true
                 break
             fi
         fi
         if [ $((i % 10)) -eq 0 ]; then
-            echo "  Waiting for Eclipse Che CSV... (${i}/${OLM_TIMEOUT}s)"
+            echo "  Waiting for ${PRODUCT_NAME} CSV... (${i}/${OLM_TIMEOUT}s)"
         fi
         sleep 1
     done
 
     if [ "${csv_found}" != "true" ]; then
-        echo -e "${RED}✗ Timeout waiting for Eclipse Che CSV to be ready${NC}"
+        echo -e "${RED}✗ Timeout waiting for ${PRODUCT_NAME} CSV to be ready${NC}"
         echo "  Current subscription status:"
-        oc get subscription eclipse-che -n ${NAMESPACE} -o yaml 2>/dev/null || true
+        oc get subscription ${OPERATOR_NAME} -n ${NAMESPACE} -o yaml 2>/dev/null || true
         echo ""
         echo "  Checking for InstallPlan:"
         oc get installplan -n ${NAMESPACE} 2>/dev/null || true
@@ -346,12 +358,12 @@ EOF
     echo ""
 
     # Step 4g: Create CheCluster
-    echo -e "${YELLOW}Creating CheCluster with PR-1442 dashboard...${NC}"
+    echo -e "${YELLOW}Creating CheCluster with custom dashboard...${NC}"
     cat <<EOF | oc apply -f -
 apiVersion: org.eclipse.che/v2
 kind: CheCluster
 metadata:
-  name: eclipse-che
+  name: ${OPERATOR_NAME}
   namespace: ${NAMESPACE}
 spec:
   components:
@@ -386,6 +398,10 @@ while [[ $# -gt 0 ]]; do
         --che-operator-image)
             CHE_OPERATOR_IMAGE="$2"
             shift 2
+            ;;
+        --crw)
+            DEPLOY_CRW=true
+            shift
             ;;
         --install-chectl)
             INSTALL_CHECTL=true
@@ -439,6 +455,27 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# Set defaults based on product (CRW vs upstream Che)
+if [ "${DEPLOY_CRW}" = "true" ]; then
+    # CodeReady Workspaces (Red Hat downstream)
+    NAMESPACE="${NAMESPACE:-openshift-workspaces}"
+    DASHBOARD_IMAGE="${DASHBOARD_IMAGE:-registry.redhat.io/codeready-workspaces/crw-2-rhel8-dashboard:latest}"
+    CHE_OPERATOR_IMAGE="${CHE_OPERATOR_IMAGE:-registry.redhat.io/codeready-workspaces/crw-2-rhel8-operator:latest}"
+    PRODUCT_NAME="CodeReady Workspaces"
+    OPERATOR_NAME="codeready-workspaces"
+    CATALOG_SOURCE_NAME="redhat-operators"
+    CATALOG_SOURCE_NAMESPACE="openshift-marketplace"
+else
+    # Upstream Eclipse Che
+    NAMESPACE="${NAMESPACE:-${CHE_NAMESPACE:-eclipse-che}}"
+    DASHBOARD_IMAGE="${DASHBOARD_IMAGE:-quay.io/eclipse/che-dashboard:pr-1442}"
+    CHE_OPERATOR_IMAGE="${CHE_OPERATOR_IMAGE:-quay.io/eclipse/che-operator:next}"
+    PRODUCT_NAME="Eclipse Che"
+    OPERATOR_NAME="eclipse-che"
+    CATALOG_SOURCE_NAME="eclipse-che"
+    CATALOG_SOURCE_NAMESPACE="openshift-marketplace"
+fi
+
 if [ "${MIRROR_MODE}" != "minimal" ] && [ "${MIRROR_MODE}" != "full" ]; then
     echo -e "${RED}Error: Invalid --mirror-mode '${MIRROR_MODE}'. Expected 'minimal' or 'full'.${NC}"
     exit 1
@@ -470,10 +507,15 @@ if [ -n "$KUBECONFIG_FILE" ]; then
 fi
 
 echo -e "${BLUE}╔════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${BLUE}║  Deploy Eclipse Che with IPv6 Support on OpenShift        ║${NC}"
+if [ "${DEPLOY_CRW}" = "true" ]; then
+    echo -e "${BLUE}║  Deploy CodeReady Workspaces with IPv6 on OpenShift       ║${NC}"
+else
+    echo -e "${BLUE}║  Deploy Eclipse Che with IPv6 Support on OpenShift        ║${NC}"
+fi
 echo -e "${BLUE}╚════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 echo -e "${YELLOW}Configuration:${NC}"
+echo "  Product:          ${PRODUCT_NAME}"
 echo "  Platform:         OpenShift"
 echo "  Deployment mode:  $([ "${MANUAL_OLM}" = "true" ] && echo "Manual OLM (timeout: ${OLM_TIMEOUT}s)" || echo "chectl")"
 echo "  Namespace:        ${NAMESPACE}"
@@ -912,12 +954,16 @@ echo ""
 
 # Display results
 echo -e "${GREEN}╔════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${GREEN}║         Eclipse Che Deployed Successfully!                 ║${NC}"
+if [ "${DEPLOY_CRW}" = "true" ]; then
+    echo -e "${GREEN}║     CodeReady Workspaces Deployed Successfully!            ║${NC}"
+else
+    echo -e "${GREEN}║         Eclipse Che Deployed Successfully!                 ║${NC}"
+fi
 echo -e "${GREEN}╚════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
 # Get Che URL
-CHE_URL=$(oc get checluster eclipse-che -n ${NAMESPACE} -o jsonpath='{.status.cheURL}' 2>/dev/null || echo "Not available yet")
+CHE_URL=$(oc get checluster ${OPERATOR_NAME} -n ${NAMESPACE} -o jsonpath='{.status.cheURL}' 2>/dev/null || echo "Not available yet")
 
 echo -e "${BLUE}Access Information:${NC}"
 echo "  Che URL:       ${CHE_URL}"

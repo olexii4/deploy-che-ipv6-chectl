@@ -889,10 +889,10 @@ if [ -n "$DASHBOARD_POD" ]; then
     ACTUAL_IMAGE=$(oc get pod ${DASHBOARD_POD} -n ${NAMESPACE} -o jsonpath='{.spec.containers[0].image}')
     echo "  Image: ${ACTUAL_IMAGE}"
 
-    if [[ "$ACTUAL_IMAGE" == *"pr-1442"* ]]; then
-        echo -e "${GREEN}  ✓ Correct dashboard image (pr-1442)${NC}"
+    if [[ "$ACTUAL_IMAGE" == "$DASHBOARD_IMAGE" ]]; then
+        echo -e "${GREEN}  ✓ Correct dashboard image${NC}"
     else
-        echo -e "${YELLOW}  ⚠ Warning: Expected pr-1442 image, got: ${ACTUAL_IMAGE}${NC}"
+        echo -e "${YELLOW}  ⚠ Warning: Expected ${DASHBOARD_IMAGE}, got: ${ACTUAL_IMAGE}${NC}"
     fi
 
     # Check pod IPs

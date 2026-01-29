@@ -1,0 +1,68 @@
+# Example CheCluster CR Patch
+# Use this with --che-operator-cr-patch-yaml to override specific fields
+#
+# Usage:
+#   ./deploy-che-ipv6.sh --che-operator-cr-patch-yaml examples/checluster-cr-patch.yaml
+#
+# This patch file overrides only the specified fields in the default CheCluster CR
+# without replacing the entire CR definition.
+
+# Override container images for mirrored versions
+spec:
+  components:
+    dashboard:
+      deployment:
+        containers:
+          - name: dashboard
+            # Use PR-1442 for IPv6 URL validation testing
+            image: quay.io/eclipse/che-dashboard:pr-1442
+
+    # Increase resource limits for slow IPv6 clusters
+    cheServer:
+      deployment:
+        containers:
+          - name: che-server
+            resources:
+              limits:
+                memory: 2Gi
+                cpu: 2000m
+              requests:
+                memory: 1Gi
+                cpu: 500m
+
+    pluginRegistry:
+      deployment:
+        containers:
+          - name: plugin-registry
+            resources:
+              limits:
+                memory: 1Gi
+              requests:
+                memory: 512Mi
+
+    devfileRegistry:
+      deployment:
+        containers:
+          - name: devfile-registry
+            resources:
+              limits:
+                memory: 1Gi
+              requests:
+                memory: 512Mi
+
+  # Increase workspace startup timeout for IPv6
+  devEnvironments:
+    startTimeoutSeconds: 900  # 15 minutes (default: 300)
+
+    # Use mirrored UDI image if available
+    defaultComponents:
+      - name: universal-developer-image
+        container:
+          # This will be mirrored to internal registry
+          image: quay.io/devfile/universal-developer-image:ubi9-latest
+          memoryLimit: 6Gi
+          memoryRequest: 4Gi
+
+    # Use mirrored project-clone image
+    projectClone:
+      image: quay.io/devfile/project-clone:next

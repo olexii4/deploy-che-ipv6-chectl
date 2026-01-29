@@ -308,7 +308,7 @@ if [ "${MODE}" = "full" ]; then
     # These are unpacked by OLM during operator installation
     # NOTE: These digests may change when operator versions update
     # If deployment fails with "manifest unknown" for a bundle, add the missing digest here
-    "quay.io/devfile/devworkspace-operator-bundle@sha256:a3fb42e76b477cc00f4833be380efde57503802082ce07985e55dd5f96a1d597"
+    # "quay.io/devfile/devworkspace-operator-bundle@sha256:a3fb42e76b477cc00f4833be380efde57503802082ce07985e55dd5f96a1d597"  # Manifest no longer exists in quay.io
     "quay.io/eclipse/eclipse-che-olm-bundle@sha256:b525748e410cf2ddb405209ac5bce7b4ed2e401b7141f6c4edcea0e32e5793a1"
   )
 fi

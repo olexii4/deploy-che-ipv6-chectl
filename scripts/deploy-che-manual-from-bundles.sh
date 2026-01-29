@@ -148,12 +148,17 @@ if [ "$SKIP_DEVWORKSPACE" = false ]; then
 
     log_info "Found CSV: $(basename $CSV_FILE)"
 
-    # Extract CRDs from bundle
-    log_info "Applying CRDs..."
-    find "$TEMP_DIR/devworkspace-manifests" -name "*.crd.yaml" -exec kubectl apply -f {} \;
+    # Extract and apply CRDs from bundle
+    log_info "Applying DevWorkspace CRDs..."
 
     # Create devworkspace-controller namespace if it doesn't exist
     kubectl create namespace devworkspace-controller --dry-run=client -o yaml | kubectl apply -f -
+
+    # Apply all CRD files from the bundle (using server-side apply for large resources)
+    find "$TEMP_DIR/devworkspace-manifests" -name "*.crd.yaml" -o -name "*_devworkspace*.yaml" | while read crd; do
+        log_info "  Applying $(basename $crd)"
+        kubectl apply --server-side=true --force-conflicts -f "$crd" 2>/dev/null || kubectl apply -f "$crd"
+    done
 
     # Parse CSV and extract deployment/RBAC specs
     log_info "Extracting operator deployment from CSV..."
@@ -298,6 +303,24 @@ YAML
     echo
 else
     log_warn "Skipping DevWorkspace Operator installation"
+    log_info "Installing DevWorkspace CRDs (required by Che Operator)..."
+
+    # Even when skipping DevWorkspace operator, we still need the CRDs
+    # Pull bundle image
+    podman pull "$DEVWORKSPACE_BUNDLE_IMAGE" >/dev/null 2>&1
+
+    # Extract manifests from bundle
+    BUNDLE_CONTAINER=$(podman create "$DEVWORKSPACE_BUNDLE_IMAGE")
+    podman cp "${BUNDLE_CONTAINER}:/manifests" "$TEMP_DIR/devworkspace-manifests" 2>/dev/null
+    podman rm "$BUNDLE_CONTAINER" >/dev/null 2>&1
+
+    # Apply all DevWorkspace CRDs
+    find "$TEMP_DIR/devworkspace-manifests" -name "*.crd.yaml" -o -name "*devworkspace*.yaml" | while read crd; do
+        log_info "  Applying $(basename $crd)"
+        kubectl apply --server-side=true --force-conflicts -f "$crd" 2>/dev/null || kubectl apply -f "$crd"
+    done
+
+    log_success "DevWorkspace CRDs installed"
     echo
 fi
 
@@ -484,8 +507,85 @@ fi
 log_info "Applying Che Operator manifests..."
 kubectl apply -f "$TEMP_DIR/che-operator.yaml"
 
+# Create webhook TLS certificate for Che Operator
+log_info "Creating webhook TLS certificate..."
+CERT_DIR=$(mktemp -d)
+trap "rm -rf $CERT_DIR" EXIT
+
+# Generate self-signed certificate
+openssl req -x509 -newkey rsa:2048 -nodes \
+    -keyout "$CERT_DIR/tls.key" \
+    -out "$CERT_DIR/tls.crt" \
+    -days 365 \
+    -subj "/CN=che-operator-webhook-server.${NAMESPACE}.svc" \
+    >/dev/null 2>&1
+
+# Create kubernetes.io/tls secret
+kubectl create secret tls che-operator-webhook-server-cert \
+    -n "$NAMESPACE" \
+    --cert="$CERT_DIR/tls.crt" \
+    --key="$CERT_DIR/tls.key" \
+    --dry-run=client -o yaml | kubectl apply -f -
+
+# Patch operator deployment to mount webhook certificates
+log_info "Mounting webhook certificates to operator..."
+kubectl patch deployment che-operator -n "$NAMESPACE" --type='json' -p='[
+  {
+    "op": "add",
+    "path": "/spec/template/spec/volumes",
+    "value": [
+      {
+        "name": "webhook-cert",
+        "secret": {
+          "secretName": "che-operator-webhook-server-cert"
+        }
+      }
+    ]
+  },
+  {
+    "op": "add",
+    "path": "/spec/template/spec/containers/0/volumeMounts",
+    "value": [
+      {
+        "name": "webhook-cert",
+        "mountPath": "/tmp/k8s-webhook-server/serving-certs",
+        "readOnly": true
+      }
+    ]
+  }
+]' 2>/dev/null || log_warn "Webhook cert mount patch skipped (may already exist)"
+
+# Create leader election RBAC for Che Operator
+log_info "Creating leader election RBAC..."
+cat <<EOF | kubectl apply -f -
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: che-operator-leader-election
+  namespace: $NAMESPACE
+rules:
+- apiGroups: ["coordination.k8s.io"]
+  resources: ["leases"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: che-operator-leader-election
+  namespace: $NAMESPACE
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: che-operator-leader-election
+subjects:
+- kind: ServiceAccount
+  name: ${SA_NAME:-che-operator}
+  namespace: $NAMESPACE
+EOF
+
 # Wait for Che Operator
 log_info "Waiting for Che Operator..."
+sleep 10  # Give operator time to restart with webhook certs
 kubectl wait --for=condition=available --timeout=300s \
     deployment/che-operator \
     -n "$NAMESPACE" 2>/dev/null || {

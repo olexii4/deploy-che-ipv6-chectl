@@ -324,6 +324,31 @@ if [ "${MODE}" = "full" ]; then
     # "quay.io/devfile/devworkspace-operator-bundle@sha256:a3fb42e76b477cc00f4833be380efde57503802082ce07985e55dd5f96a1d597"  # Manifest no longer exists in quay.io
     "quay.io/eclipse/eclipse-che-olm-bundle@sha256:b525748e410cf2ddb405209ac5bce7b4ed2e401b7141f6c4edcea0e32e5793a1"
   )
+
+  # Extract gateway (traefik) image from Che operator bundle
+  # The che-gateway pod requires che--traefik image which is not listed in the static image set
+  # This image is referenced via RELATED_IMAGE_single_host_gateway in the operator deployment
+  if [ "${PREFETCH_ONLY}" = "false" ]; then
+    echo -e "${YELLOW}Extracting gateway image from Che operator bundle...${NC}"
+    if command -v podman &> /dev/null; then
+      # Pull the Che bundle and extract the gateway image reference
+      GATEWAY_IMAGE=$(podman run --rm "${CHE_BUNDLE_IMAGE}" cat /manifests/*.clusterserviceversion.yaml 2>/dev/null | \
+        grep -A1 "RELATED_IMAGE_single_host_gateway" | grep "value:" | awk '{print $2}' || echo "")
+
+      if [ -n "${GATEWAY_IMAGE}" ]; then
+        echo -e "${GREEN}  Found gateway image: ${GATEWAY_IMAGE}${NC}"
+        IMAGES+=("${GATEWAY_IMAGE}")
+      else
+        # Fallback to known gateway image pattern
+        echo -e "${YELLOW}  Could not extract gateway image from bundle, using fallback pattern${NC}"
+        IMAGES+=("quay.io/eclipse/che--traefik:v3.6.7")
+      fi
+    else
+      echo -e "${YELLOW}  podman not found, skipping dynamic gateway image discovery${NC}"
+      IMAGES+=("quay.io/eclipse/che--traefik:v3.6.7")
+    fi
+    echo ""
+  fi
 fi
 
 # Optionally discover additional images from namespaces (helps when operators pin sha-* tags/digests).

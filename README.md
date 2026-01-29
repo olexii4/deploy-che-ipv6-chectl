@@ -42,6 +42,7 @@ cd deploy-che-ipv6-chectl
 
 **What the mirror script does:**
 - Detects the local registry from cluster (`virthost.ostest.test.metalkube.org:5000`)
+- Automatically extracts gateway (traefik) image from Che operator bundle
 - Pulls all Che images locally (uses cache for faster re-runs)
 - Pushes images to the cluster's local registry via proxy
 - Creates ImageContentSourcePolicy to redirect image pulls
@@ -74,8 +75,10 @@ cd deploy-che-ipv6-chectl
 
 **What the script does:**
 - Extracts manifests directly from OLM bundle images (bypasses catalog networking)
-- Deploys DevWorkspace Operator
-- Deploys Che Operator
+- Deploys DevWorkspace Operator with all required CRDs
+- Generates webhook TLS certificates for operator security
+- Creates leader election RBAC for high availability
+- Deploys Che Operator with all required resources
 - Creates CheCluster custom resource with custom dashboard image
 - Waits for all components to be ready
 

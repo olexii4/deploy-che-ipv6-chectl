@@ -159,23 +159,57 @@ if [ "$SKIP_DEVWORKSPACE" = false ]; then
     log_info "Extracting operator deployment from CSV..."
 
     # Use yq or python to parse CSV and extract deployment
-    if command -v yq &> /dev/null; then
-        # Extract deployment
-        yq eval '.spec.install.spec.deployments[0].spec' "$CSV_FILE" > "$TEMP_DIR/dwo-deployment-spec.yaml"
+    # Check if yq is the Go version (mikefarah/yq) which supports 'eval' command
+    # Python yq (kislyuk/yq) is a jq wrapper and doesn't support the eval syntax
+    if command -v yq &> /dev/null && ! yq --help 2>&1 | grep -q "jq wrapper"; then
+        # Extract deployment name and spec from CSV (OLM format)
+        DEPLOY_NAME=$(yq eval '.spec.install.spec.deployments[0].name' "$CSV_FILE")
 
-        # Create deployment manifest
+        # Create full Deployment manifest
         cat > "$TEMP_DIR/dwo-deployment.yaml" <<YAML
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: devworkspace-controller-manager
+  name: ${DEPLOY_NAME}
   namespace: devworkspace-controller
 spec:
 YAML
-        cat "$TEMP_DIR/dwo-deployment-spec.yaml" >> "$TEMP_DIR/dwo-deployment.yaml"
+        # Extract and append the deployment spec
+        yq eval '.spec.install.spec.deployments[0].spec' "$CSV_FILE" | sed 's/^/  /' >> "$TEMP_DIR/dwo-deployment.yaml"
 
-        # Apply RBAC from CSV
-        yq eval '.spec.install.spec.clusterPermissions[] | select(.serviceAccountName)' "$CSV_FILE" > "$TEMP_DIR/dwo-rbac.yaml"
+        # Extract RBAC (serviceAccount, role, rolebinding)
+        # Create ServiceAccount
+        SA_NAME=$(yq eval '.spec.install.spec.clusterPermissions[0].serviceAccountName' "$CSV_FILE")
+        cat > "$TEMP_DIR/dwo-rbac.yaml" <<YAML
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ${SA_NAME}
+  namespace: devworkspace-controller
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: devworkspace-controller-role
+rules:
+YAML
+        yq eval '.spec.install.spec.clusterPermissions[0].rules' "$CSV_FILE" | sed 's/^/  /' >> "$TEMP_DIR/dwo-rbac.yaml"
+
+        cat >> "$TEMP_DIR/dwo-rbac.yaml" <<YAML
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: devworkspace-controller-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: devworkspace-controller-role
+subjects:
+- kind: ServiceAccount
+  name: ${SA_NAME}
+  namespace: devworkspace-controller
+YAML
 
     else
         log_warn "yq not found, using simplified extraction"
@@ -184,7 +218,7 @@ YAML
         # This is less reliable but works if yq is not available
 
         # Create a minimal deployment
-        OPERATOR_IMAGE=$(grep -oP 'image: \K[^ ]+' "$CSV_FILE" | grep devworkspace-controller | head -1)
+        OPERATOR_IMAGE=$(grep 'image:' "$CSV_FILE" | grep devworkspace-controller | head -1 | sed -E 's/.*image: *([^ ]+).*/\1/')
 
         cat > "$TEMP_DIR/dwo-deployment.yaml" <<YAML
 apiVersion: v1
@@ -304,7 +338,8 @@ podman rm "$BUNDLE_CONTAINER"
 log_info "Applying Che CRDs..."
 find "$TEMP_DIR/che-manifests" -name "*_checlusters*.yaml" -o -name "*.crd.yaml" | while read crd; do
     log_info "Applying $(basename $crd)"
-    kubectl apply -f "$crd"
+    # Use server-side apply to handle large CRD annotations
+    kubectl apply --server-side=true --force-conflicts -f "$crd"
 done
 
 # Find CSV
@@ -318,7 +353,8 @@ fi
 log_info "Found Che CSV: $(basename $CSV_FILE)"
 
 # Extract operator deployment
-if command -v yq &> /dev/null; then
+# Check if yq is the Go version (mikefarah/yq), not the Python jq wrapper
+if command -v yq &> /dev/null && ! yq --help 2>&1 | grep -q "jq wrapper"; then
     log_info "Using yq to extract deployment..."
 
     # Extract ServiceAccount
@@ -336,8 +372,6 @@ metadata:
 YAML
 
     # Extract and create ClusterRole
-    yq eval '.spec.install.spec.clusterPermissions[0].rules' "$CSV_FILE" > "$TEMP_DIR/cluster-role-rules.yaml"
-
     cat >> "$TEMP_DIR/che-operator.yaml" <<YAML
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -345,7 +379,7 @@ metadata:
   name: che-operator
 rules:
 YAML
-    cat "$TEMP_DIR/cluster-role-rules.yaml" >> "$TEMP_DIR/che-operator.yaml"
+    yq eval '.spec.install.spec.clusterPermissions[0].rules' "$CSV_FILE" | sed 's/^/  /' >> "$TEMP_DIR/che-operator.yaml"
 
     # Create ClusterRoleBinding
     cat >> "$TEMP_DIR/che-operator.yaml" <<YAML
@@ -365,24 +399,25 @@ subjects:
 ---
 YAML
 
-    # Extract deployment spec
-    yq eval '.spec.install.spec.deployments[0]' "$CSV_FILE" > "$TEMP_DIR/deployment-full.yaml"
+    # Extract deployment name and spec
+    DEPLOY_NAME=$(yq eval '.spec.install.spec.deployments[0].name' "$CSV_FILE")
 
-    # Create Deployment
     cat >> "$TEMP_DIR/che-operator.yaml" <<YAML
 apiVersion: apps/v1
 kind: Deployment
+metadata:
+  name: ${DEPLOY_NAME}
+  namespace: $NAMESPACE
+spec:
 YAML
-    yq eval 'del(.metadata.labels."olm.deployment-spec-hash")' "$TEMP_DIR/deployment-full.yaml" >> "$TEMP_DIR/che-operator.yaml"
-
-    # Fix namespace in deployment
-    sed -i.bak "s/namespace: .*/namespace: $NAMESPACE/g" "$TEMP_DIR/che-operator.yaml"
+    # Extract and append the deployment spec
+    yq eval '.spec.install.spec.deployments[0].spec' "$CSV_FILE" | sed 's/^/  /' >> "$TEMP_DIR/che-operator.yaml"
 
 else
     log_warn "yq not found, using simplified operator deployment"
 
     # Fallback: create minimal operator deployment
-    OPERATOR_IMAGE=$(grep -oP 'image: \K[^ ]+' "$CSV_FILE" | grep che-operator | head -1)
+    OPERATOR_IMAGE=$(grep 'image:' "$CSV_FILE" | grep che-operator | head -1 | sed -E 's/.*image: *([^ ]+).*/\1/')
 
     cat > "$TEMP_DIR/che-operator.yaml" <<YAML
 apiVersion: v1
@@ -493,13 +528,6 @@ fi
 
 cat >> "$TEMP_DIR/checluster.yaml" <<YAML
             imagePullPolicy: Always
-            resources:
-              limits:
-                memory: 2Gi
-                cpu: 2000m
-              requests:
-                memory: 1Gi
-                cpu: 500m
 
     dashboard:
       deployment:

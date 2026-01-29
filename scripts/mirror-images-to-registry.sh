@@ -198,6 +198,19 @@ if [ -n "$KUBECONFIG_FILE" ]; then
     echo ""
 fi
 
+# Expand dashboard image shortcuts (pr-XXXX, next, latest)
+case "$DASHBOARD_IMAGE" in
+    pr-*)
+        DASHBOARD_IMAGE="quay.io/eclipse/che-dashboard:$DASHBOARD_IMAGE"
+        ;;
+    next)
+        DASHBOARD_IMAGE="quay.io/eclipse/che-dashboard:next"
+        ;;
+    latest)
+        DASHBOARD_IMAGE="quay.io/eclipse/che-dashboard:latest"
+        ;;
+esac
+
 echo -e "${BLUE}╔════════════════════════════════════════════════════════════╗${NC}"
 echo -e "${BLUE}║     Mirror Eclipse Che Images to Local Registry           ║${NC}"
 echo -e "${BLUE}╚════════════════════════════════════════════════════════════╝${NC}"

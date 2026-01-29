@@ -71,43 +71,46 @@ This step is optional but recommended to avoid timeouts during deployment.
 
 ### 4. Access Eclipse Che Dashboard
 
-On cluster-bot clusters, the Che route is not directly accessible from your laptop. Use a SOCKS proxy:
+On cluster-bot metal clusters, the Che route is not directly accessible. The cluster-bot provides a proxy in the kubeconfig that must be used.
 
-**Set up SOCKS proxy (requires SSH access to Red Hat bastion/VPN):**
+**Extract proxy from kubeconfig:**
 
 ```bash
-# Terminal 1: Create SOCKS proxy
-ssh -D 1080 -N -f user@bastion.redhat.com
+# Get proxy URL from kubeconfig (example output: http://145.40.68.183:8213)
+grep proxy-url ~/ostest-kubeconfig.yaml
 ```
 
-**Configure Google Chrome to use SOCKS proxy:**
+**Method 1: Launch Chrome with HTTP proxy (Recommended)**
 
-1. Close all Chrome windows
-2. Launch Chrome with SOCKS proxy:
-   ```bash
-   # macOS
-   /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \
-     --proxy-server="socks5://localhost:1080" \
-     --host-resolver-rules="MAP * ~NOTFOUND , EXCLUDE localhost"
+```bash
+# Extract proxy IP and port from kubeconfig
+PROXY_URL=$(grep proxy-url ~/ostest-kubeconfig.yaml | awk '{print $2}')
+PROXY_HOST=$(echo $PROXY_URL | sed 's|http://||' | cut -d: -f1)
+PROXY_PORT=$(echo $PROXY_URL | sed 's|http://||' | cut -d: -f2)
 
-   # Linux
-   google-chrome \
-     --proxy-server="socks5://localhost:1080" \
-     --host-resolver-rules="MAP * ~NOTFOUND , EXCLUDE localhost"
-   ```
+# macOS
+/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \
+  --proxy-server="http://${PROXY_HOST}:${PROXY_PORT}"
 
-3. Get Che URL and open in the proxied Chrome:
-   ```bash
-   export KUBECONFIG=~/ostest-kubeconfig.yaml
-   CHE_URL=$(kubectl get checluster eclipse-che -n eclipse-che -o jsonpath='{.status.cheURL}')
-   echo "Open in Chrome: ${CHE_URL}/dashboard/"
-   ```
+# Linux
+google-chrome \
+  --proxy-server="http://${PROXY_HOST}:${PROXY_PORT}"
+```
 
-**Alternative: Use a separate Chrome profile with proxy extension**
+Then get Che URL and open in the proxied Chrome:
+```bash
+export KUBECONFIG=~/ostest-kubeconfig.yaml
+CHE_URL=$(kubectl get checluster eclipse-che -n eclipse-che -o jsonpath='{.status.cheURL}')
+echo "Open in Chrome: ${CHE_URL}/dashboard/"
+```
 
-1. Install "Proxy SwitchyOmega" extension in Chrome
-2. Configure SOCKS5 proxy: `localhost:1080`
-3. Enable proxy for cluster domain patterns
+**Method 2: Use Chrome proxy extension**
+
+1. Install "Proxy Switcher and Manager" extension in Chrome
+2. Configure HTTP proxy using the IP and port from kubeconfig's `proxy-url`
+   - Example: `145.40.68.183:8213`
+3. Enable the proxy
+4. Navigate to the Che URL
 
 ### 5. Run IPv6 Validation Tests
 

@@ -23,21 +23,42 @@ cat > ~/ostest-kubeconfig.yaml << 'EOF'
 EOF
 ```
 
-### 2. Predownload Container Images
+### 2. Mirror Images to Local Registry
 
-**Predownload OLM bundle images to speed up deployment:**
+**IMPORTANT:** IPv6-only clusters cannot pull images from external registries. You must mirror all required images to the cluster's local registry first.
 
 ```bash
 # Clone this repository
 git clone https://github.com/olexii4/deploy-che-ipv6-chectl.git
 cd deploy-che-ipv6-chectl
 
-# Pull bundle images (requires podman)
-podman pull quay.io/devfile/devworkspace-operator-bundle:next
-podman pull quay.io/eclipse/eclipse-che-openshift-opm-bundles:next
+# Mirror all Eclipse Che images to local registry
+./scripts/mirror-images-to-registry.sh \
+  --kubeconfig ~/ostest-kubeconfig.yaml \
+  --dashboard-image pr-1442 \
+  --mode full \
+  --parallel 4
 ```
 
-This step is optional but recommended to avoid timeouts during deployment.
+**What the mirror script does:**
+- Detects the local registry from cluster (`virthost.ostest.test.metalkube.org:5000`)
+- Pulls all Che images locally (uses cache for faster re-runs)
+- Pushes images to the cluster's local registry via proxy
+- Creates ImageContentSourcePolicy to redirect image pulls
+- **Waits for cluster nodes to reboot** (~10-15 minutes)
+
+**Options:**
+```
+--kubeconfig <path>         Path to kubeconfig file (required)
+--dashboard-image <image>   Dashboard image (shortcuts: pr-XXXX, next, latest)
+--mode <minimal|full>       Image set: minimal (Che only) or full (includes DevWorkspace)
+--parallel <N>              Concurrent image copies (default: 1, recommended: 4)
+```
+
+**After mirroring completes:**
+- All images are available in the local registry
+- Cluster nodes are configured to pull from the mirror
+- You can proceed with Che deployment
 
 ### 3. Deploy Eclipse Che
 

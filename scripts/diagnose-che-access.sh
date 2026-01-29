@@ -1,158 +1,147 @@
 #!/bin/bash
-#
-# Diagnose Eclipse Che Access Issues
-#
-# This script helps diagnose why you cannot access Eclipse Che dashboard
-# and provides specific solutions based on the failure mode.
-#
 
-set -euo pipefail
+# Diagnostic and fix script for IPv6 CatalogSource connectivity issues
+# This script tests and applies the hostNetwork workaround
 
-# Colors
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-RED='\033[0;31m'
-BLUE='\033[0;34m'
-NC='\033[0m'
+set -e
 
-NAMESPACE="${1:-eclipse-che}"
-
-echo -e "${BLUE}╔════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${BLUE}║         Diagnosing Eclipse Che Access Issues              ║${NC}"
-echo -e "${BLUE}╚════════════════════════════════════════════════════════════╝${NC}"
-echo ""
-
-# Get Che URL and route
-CHE_URL=$(oc get checluster eclipse-che -n ${NAMESPACE} -o jsonpath='{.status.cheURL}' 2>/dev/null || echo "")
-ROUTE_HOST=$(oc get route che -n ${NAMESPACE} -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
-
-if [ -z "$CHE_URL" ]; then
-    echo -e "${RED}Error: Could not get Che URL. Is Che deployed?${NC}"
+KUBECONFIG="${1:-}"
+if [ -z "$KUBECONFIG" ]; then
+    echo "Usage: $0 <kubeconfig-path>"
     exit 1
 fi
 
-echo -e "${BLUE}Che Information:${NC}"
-echo "  Che URL:   ${CHE_URL}"
-echo "  Route Host: ${ROUTE_HOST}"
-echo ""
+export KUBECONFIG
 
-# Test 1: Check from within cluster
-echo -e "${YELLOW}Test 1: Checking Che access from within cluster...${NC}"
-CLUSTER_TEST=$(oc run che-test-access --image=curlimages/curl:latest --rm -i --restart=Never -n ${NAMESPACE} -- \
-    curl -sL -w "%{http_code}" -o /dev/null --max-time 10 "${CHE_URL}" 2>&1 || echo "failed")
+echo "=== IPv6 Catalog Connectivity Diagnostics ==="
+echo
 
-if [[ "$CLUSTER_TEST" == "200" ]] || [[ "$CLUSTER_TEST" == "302" ]] || [[ "$CLUSTER_TEST" == "301" ]]; then
-    echo -e "${GREEN}✓ Che is accessible from within cluster (HTTP ${CLUSTER_TEST})${NC}"
-    echo -e "${YELLOW}  → This means Che deployment is working${NC}"
-    echo -e "${YELLOW}  → Problem is network access from your laptop${NC}"
-else
-    echo -e "${RED}✗ Che is NOT accessible from within cluster${NC}"
-    echo -e "${YELLOW}  → This indicates a deployment or route problem${NC}"
-    echo ""
-    echo "Check pods:"
-    oc get pods -n ${NAMESPACE}
-    exit 1
+# 1. Check current catalog status
+echo "1. Current CatalogSource Status:"
+kubectl get catalogsource -n openshift-marketplace
+
+echo
+echo "2. Check Catalog Services and Endpoints:"
+for catalog in devworkspace-operator eclipse-che; do
+    if kubectl get catalogsource -n openshift-marketplace $catalog &>/dev/null; then
+        echo "  Catalog: $catalog"
+        SVC_IP=$(kubectl get svc -n openshift-marketplace $catalog -o jsonpath='{.spec.clusterIP}' 2>/dev/null || echo "N/A")
+        ENDPOINT=$(kubectl get endpoints -n openshift-marketplace $catalog -o jsonpath='{.subsets[0].addresses[0].ip}' 2>/dev/null || echo "N/A")
+        echo "    Service ClusterIP: $SVC_IP"
+        echo "    Pod Endpoint: $ENDPOINT"
+        
+        # Test connectivity if service exists
+        if [ "$SVC_IP" != "N/A" ]; then
+            echo "    Testing connectivity to $SVC_IP:50051..."
+            if timeout 5 kubectl run -n openshift-marketplace --rm -i --restart=Never grpc-test-$catalog \
+                --image=quay.io/grpc-ecosystem/grpc-health-probe:latest \
+                -- grpc_health_probe -addr=$SVC_IP:50051 &>/dev/null; then
+                echo "    ✅ Connection successful"
+            else
+                echo "    ❌ Connection failed (timeout)"
+            fi
+        fi
+        echo
+    fi
+done
+
+echo "3. Current Subscription Status:"
+kubectl get subscription -n openshift-operators devworkspace-operator -o jsonpath='{.status.conditions[?(@.type=="BundleUnpacking")]}' 2>/dev/null | jq . || echo "Subscription not found or no status"
+
+echo
+echo "=== Proposed Fix: Use HostNetwork for CatalogSources ==="
+echo
+read -p "Apply hostNetwork patch to CatalogSources? (y/N) " -n 1 -r
+echo
+if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    echo "Skipping patch. Exiting."
+    exit 0
 fi
-echo ""
 
-# Test 2: DNS resolution from laptop
-echo -e "${YELLOW}Test 2: Checking DNS resolution from your laptop...${NC}"
-if host "${ROUTE_HOST}" >/dev/null 2>&1; then
-    RESOLVED_IP=$(host "${ROUTE_HOST}" | grep "has address\|has IPv6 address" | head -1)
-    echo -e "${GREEN}✓ Route hostname resolves: ${RESOLVED_IP}${NC}"
-else
-    echo -e "${RED}✗ Route hostname does NOT resolve from your laptop${NC}"
-    echo -e "${YELLOW}  → DNS resolution failure (common with cluster-bot)${NC}"
-    echo ""
-    echo -e "${BLUE}SOLUTION: Use SOCKS proxy via SSH bastion${NC}"
-    echo "  This is required for cluster-bot clusters"
-    echo ""
-fi
-echo ""
+echo "Applying hostNetwork patch..."
 
-# Test 3: Network connectivity from laptop
-echo -e "${YELLOW}Test 3: Checking network connectivity from your laptop...${NC}"
-if timeout 5 bash -c "curl -sL --max-time 5 -o /dev/null '${CHE_URL}' 2>&1" >/dev/null 2>&1; then
-    echo -e "${GREEN}✓ Can connect to ${CHE_URL}${NC}"
-    echo -e "${GREEN}  → Network access is working!${NC}"
-else
-    echo -e "${RED}✗ Cannot connect to ${CHE_URL} from your laptop${NC}"
-    echo -e "${YELLOW}  → Network is blocked or route is not publicly accessible${NC}"
-    echo ""
-fi
-echo ""
+# Delete existing subscription first
+echo "1. Deleting existing subscription..."
+kubectl delete subscription -n openshift-operators devworkspace-operator --ignore-not-found=true
 
-# Test 4: Check OAuth configuration
-echo -e "${YELLOW}Test 4: Checking OAuth redirect URIs...${NC}"
-KEYCLOAK_URL=$(oc get checluster eclipse-che -n ${NAMESPACE} -o jsonpath='{.status.keycloakURL}' 2>/dev/null || echo "")
-if [ -n "$KEYCLOAK_URL" ]; then
-    echo "  Keycloak URL: ${KEYCLOAK_URL}"
-    echo -e "${YELLOW}  Note: OAuth redirect URIs must match the access URL${NC}"
-else
-    echo -e "${YELLOW}  Using OpenShift OAuth (no separate Keycloak)${NC}"
-fi
-echo ""
+# Delete and recreate catalogs with hostNetwork
+echo "2. Recreating CatalogSources with hostNetwork..."
 
-# Show route details
-echo -e "${YELLOW}Route Configuration:${NC}"
-oc get route che -n ${NAMESPACE} -o yaml | grep -A5 "spec:" | grep -E "host:|tls:|termination:"
-echo ""
+# DevWorkspace Operator catalog
+kubectl delete catalogsource -n openshift-marketplace devworkspace-operator --ignore-not-found=true
+cat <<YAML | kubectl apply -f -
+apiVersion: operators.coreos.com/v1alpha1
+kind: CatalogSource
+metadata:
+  name: devworkspace-operator
+  namespace: openshift-marketplace
+spec:
+  sourceType: grpc
+  image: quay.io/devfile/devworkspace-operator-index:next
+  publisher: Red Hat
+  displayName: DevWorkspace Operator
+  updateStrategy:
+    registryPoll:
+      interval: 15m
+  grpcPodConfig:
+    securityContextConfig: restricted
+    nodeSelector:
+      kubernetes.io/os: linux
+    hostNetwork: true
+YAML
 
-echo -e "${BLUE}╔════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${BLUE}║                     SOLUTIONS                              ║${NC}"
-echo -e "${BLUE}╚════════════════════════════════════════════════════════════╝${NC}"
-echo ""
+# Eclipse Che catalog
+kubectl delete catalogsource -n openshift-marketplace eclipse-che --ignore-not-found=true
+cat <<YAML | kubectl apply -f -
+apiVersion: operators.coreos.com/v1alpha1
+kind: CatalogSource
+metadata:
+  name: eclipse-che
+  namespace: openshift-marketplace
+spec:
+  sourceType: grpc
+  image: quay.io/eclipse/eclipse-che-openshift-opm-catalog:next
+  publisher: Eclipse Che
+  displayName: Eclipse Che Operator
+  updateStrategy:
+    registryPoll:
+      interval: 15m
+  grpcPodConfig:
+    securityContextConfig: restricted
+    nodeSelector:
+      kubernetes.io/os: linux
+    hostNetwork: true
+YAML
 
-echo -e "${GREEN}SOLUTION 1: SOCKS Proxy (Recommended for cluster-bot)${NC}"
-echo ""
-echo "If you have SSH access to a bastion/VPN server that can reach the cluster:"
-echo ""
-echo "  # Set up SOCKS proxy"
-echo "  ssh -D 1080 -N user@<bastion-host>"
-echo ""
-echo "  # Configure Firefox (best for SOCKS)"
-echo "  # Settings → Network Settings → Manual proxy"
-echo "  # SOCKS Host: 127.0.0.1, Port: 1080, SOCKS v5"
-echo "  # ✓ Proxy DNS when using SOCKS v5"
-echo ""
-echo "  # Then open in Firefox:"
-echo "  ${CHE_URL}/dashboard/"
-echo ""
+echo
+echo "3. Waiting for catalog pods to be ready (with hostNetwork)..."
+kubectl wait --for=condition=ready pod -n openshift-marketplace -l olm.catalogSource=devworkspace-operator --timeout=120s
+kubectl wait --for=condition=ready pod -n openshift-marketplace -l olm.catalogSource=eclipse-che --timeout=120s
 
-echo -e "${GREEN}SOLUTION 2: /etc/hosts + SSH Tunnel${NC}"
-echo ""
-echo "If SOCKS doesn't work, use SSH tunnel with /etc/hosts:"
-echo ""
-echo "  # Get route IP from cluster"
-echo "  ROUTE_IP=\$(oc get pod -n openshift-ingress -l ingresscontroller.operator.openshift.io/deployment-ingresscontroller=default -o jsonpath='{.items[0].status.podIP}')"
-echo ""
-echo "  # Add to /etc/hosts (requires sudo)"
-echo "  echo \"\${ROUTE_IP} ${ROUTE_HOST}\" | sudo tee -a /etc/hosts"
-echo ""
-echo "  # Create SSH tunnel to cluster node (if you have node SSH access)"
-echo "  ssh -L 443:<ROUTE_IP>:443 user@<cluster-node>"
-echo ""
-echo "  # Access at:"
-echo "  https://${ROUTE_HOST}/dashboard/"
-echo ""
+echo
+echo "4. Testing connectivity with hostNetwork..."
+sleep 5
 
-echo -e "${GREEN}SOLUTION 3: OpenShift Console Link${NC}"
-echo ""
-echo "Access Che via OpenShift Console (if console is accessible):"
-echo ""
-echo "  # Get console URL"
-echo "  oc whoami --show-console"
-echo ""
-echo "  # Navigate to: Networking → Routes → ${NAMESPACE} → che"
-echo "  # Click the route URL"
-echo ""
+for catalog in devworkspace-operator eclipse-che; do
+    POD=$(kubectl get pod -n openshift-marketplace -l olm.catalogSource=$catalog -o jsonpath='{.items[0].metadata.name}')
+    POD_IP=$(kubectl get pod -n openshift-marketplace $POD -o jsonpath='{.status.podIP}')
+    echo "  Testing $catalog pod $POD at $POD_IP..."
+    
+    if kubectl run -n openshift-marketplace --rm -i --restart=Never grpc-test-$catalog \
+        --image=quay.io/grpc-ecosystem/grpc-health-probe:latest \
+        -- grpc_health_probe -addr=$POD_IP:50051; then
+        echo "  ✅ Direct pod connection successful"
+    else
+        echo "  ❌ Direct pod connection failed"
+    fi
+    echo
+done
 
-echo -e "${GREEN}SOLUTION 4: Request Cluster with Public Access${NC}"
-echo ""
-echo "For testing that requires external access, request a different cluster type:"
-echo ""
-echo "  # Launch cluster with AWS (typically has public routes)"
-echo "  launch 4.20.2 aws,ipv6"
-echo ""
-
-echo -e "${YELLOW}═══════════════════════════════════════════════════════════${NC}"
+echo "=== HostNetwork Patch Applied ==="
+echo
+echo "Next steps:"
+echo "1. Run chectl deployment again with the patched catalogs"
+echo "2. Monitor if OLM can now resolve the subscription"
+echo
+echo "Command to retry deployment:"
+echo "  ./scripts/deploy-che-ipv6.sh --kubeconfig $KUBECONFIG --dashboard-image pr-1442"

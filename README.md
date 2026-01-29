@@ -69,48 +69,61 @@ This step is optional but recommended to avoid timeouts during deployment.
 --che-bundle <image>             Che bundle image
 ```
 
+**After deployment completes, the script will show:**
+- ✅ Che URL (e.g., `https://eclipse-che-eclipse-che.apps.ostest...`)
+- ✅ Proxy information extracted from kubeconfig
+- ✅ Chrome launch commands for macOS and Linux
+- ✅ Step-by-step instructions to access the dashboard
+
 ### 4. Access Eclipse Che Dashboard
 
-On cluster-bot metal clusters, the Che route is not directly accessible. The cluster-bot provides a proxy in the kubeconfig that must be used.
+**The deployment script automatically shows you what to do next!**
 
-**Extract proxy from kubeconfig:**
+When deployment completes successfully, you'll see output like this:
 
-```bash
-# Get proxy URL from kubeconfig (example output: http://145.40.68.183:8213)
-grep proxy-url ~/ostest-kubeconfig.yaml
+```
+=== Eclipse Che Deployed Successfully ===
+Che URL: https://eclipse-che-eclipse-che.apps.ostest.test.metalkube.org
+
+=== Next Steps: Access the Dashboard ===
+
+The cluster is only accessible via proxy from the kubeconfig:
+  Proxy: http://145.40.68.183:8213
+
+Step 1: Launch Google Chrome with proxy
+
+  macOS:
+    /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \
+      --proxy-server="http://145.40.68.183:8213"
+
+  Linux:
+    google-chrome \
+      --proxy-server="http://145.40.68.183:8213"
+
+Step 2: Open Che Dashboard in the proxied Chrome:
+  https://eclipse-che-eclipse-che.apps.ostest.test.metalkube.org/dashboard/
+
+Step 3: Login with OpenShift credentials
+  (Use the kubeadmin credentials from cluster-bot)
 ```
 
-**Method 1: Launch Chrome with HTTP proxy (Recommended)**
+**Simply copy and paste the commands shown in the output!**
 
-```bash
-# Extract proxy IP and port from kubeconfig
-PROXY_URL=$(grep proxy-url ~/ostest-kubeconfig.yaml | awk '{print $2}')
-PROXY_HOST=$(echo $PROXY_URL | sed 's|http://||' | cut -d: -f1)
-PROXY_PORT=$(echo $PROXY_URL | sed 's|http://||' | cut -d: -f2)
+The script automatically:
+- ✅ Extracts the proxy from your kubeconfig
+- ✅ Shows the correct Chrome launch command for your OS
+- ✅ Provides the exact Che URL to open
+- ✅ Gives you step-by-step instructions
 
-# macOS
-/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \
-  --proxy-server="http://${PROXY_HOST}:${PROXY_PORT}"
+**Alternative: Manual proxy configuration**
 
-# Linux
-google-chrome \
-  --proxy-server="http://${PROXY_HOST}:${PROXY_PORT}"
-```
-
-Then get Che URL and open in the proxied Chrome:
-```bash
-export KUBECONFIG=~/ostest-kubeconfig.yaml
-CHE_URL=$(kubectl get checluster eclipse-che -n eclipse-che -o jsonpath='{.status.cheURL}')
-echo "Open in Chrome: ${CHE_URL}/dashboard/"
-```
-
-**Method 2: Use Chrome proxy extension**
+If you prefer to use a browser extension instead:
 
 1. Install "Proxy Switcher and Manager" extension in Chrome
-2. Configure HTTP proxy using the IP and port from kubeconfig's `proxy-url`
+2. Configure HTTP proxy using the IP and port shown in the deployment output
    - Example: `145.40.68.183:8213`
 3. Enable the proxy
-4. Navigate to the Che URL
+4. Navigate to the Che URL shown in the output
 
 ### 5. Run IPv6 Validation Tests
 

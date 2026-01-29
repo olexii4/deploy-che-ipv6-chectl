@@ -981,7 +981,7 @@ echo "  2. Verify nodes are Ready:"
 echo "     oc get nodes"
 echo ""
 echo "  3. Deploy Eclipse Che:"
-echo "     ./deploy-che-ipv6-chectl.sh"
+echo "     ./scripts/deploy-che-manual-from-bundles.sh --kubeconfig <kubeconfig> --dashboard-image pr-1442"
 echo ""
 
 echo -e "${BLUE}Troubleshooting:${NC}"

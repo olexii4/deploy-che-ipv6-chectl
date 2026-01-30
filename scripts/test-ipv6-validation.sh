@@ -449,10 +449,9 @@ metadata:
     app: devfile-server
 spec:
   type: ClusterIP
-  ipFamilyPolicy: PreferDualStack
+  ipFamilyPolicy: SingleStack
   ipFamilies:
     - IPv6
-    - IPv4
   ports:
   - port: 8080
     targetPort: 8080
@@ -631,10 +630,9 @@ metadata:
     app: git-server
 spec:
   type: ClusterIP
-  ipFamilyPolicy: PreferDualStack
+  ipFamilyPolicy: SingleStack
   ipFamilies:
     - IPv6
-    - IPv4
   ports:
   - port: 8080
     targetPort: 8080

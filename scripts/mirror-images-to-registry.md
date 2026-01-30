@@ -19,6 +19,7 @@ The script `scripts/mirror-images-to-registry.sh` mirrors the required images in
 ### What the script does
 
 - **Mirrors the required images** (Che, DevWorkspace, gateway sidecars, registries) into the detected cluster registry.
+- **Includes gateway (traefik) image** in the static image list to ensure che-gateway pod has all required images.
 - Applies:
   - `ImageTagMirrorSet` and `ImageDigestMirrorSet` (preferred on modern OpenShift)
   - `ImageContentSourcePolicy` (compatibility)

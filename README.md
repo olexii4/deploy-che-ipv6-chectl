@@ -239,7 +239,9 @@ The deployment script extracts operator manifests directly from OLM bundle image
 
 ### Issue: Cannot access Che dashboard
 
-**Solution:** Use SOCKS proxy as described in step 3 above.
+**Solution:** Use HTTP proxy as described in step 4 above.
+
+The cluster is only accessible via the proxy URL from your kubeconfig. Launch Chrome with the proxy configuration shown in the deployment output.
 
 Port-forward access does not work for Che login due to OAuth redirect URI mismatch.
 
@@ -261,7 +263,7 @@ For detailed troubleshooting, see [scripts/diagnose-che-access.md](./scripts/dia
 
 After deployment, you can manually test IPv6 URLs:
 
-1. Access the Che dashboard using SOCKS proxy
+1. Access the Che dashboard using HTTP proxy (Chrome with --proxy-server flag)
 2. Navigate to factory URL:
    ```
    https://<che-host>/#http://[fd00::1]:8080/your-repo.git

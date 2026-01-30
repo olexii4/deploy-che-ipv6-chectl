@@ -19,7 +19,7 @@ CHE_SERVER_IMAGE=""
 KUBECONFIG_PATH=""
 SKIP_DEVWORKSPACE=false
 DEVWORKSPACE_BUNDLE_IMAGE="quay.io/devfile/devworkspace-operator-bundle:next"
-CHE_BUNDLE_IMAGE="quay.io/eclipse/eclipse-che-openshift-opm-bundles:next"
+CHE_BUNDLE_IMAGE="quay.io/eclipse/eclipse-che-olm-bundle@sha256:b525748e410cf2ddb405209ac5bce7b4ed2e401b7141f6c4edcea0e32e5793a1"
 
 # Function to print colored output
 log_info() {

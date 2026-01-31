@@ -18,11 +18,18 @@ The script `scripts/mirror-images-to-registry.sh` mirrors the required images in
 
 ### What the script does
 
-- **Mirrors the required images** (Che, DevWorkspace, gateway sidecars, registries) into the detected cluster registry.
+- **Mirrors the required images** (Che, DevWorkspace, gateway sidecars, registries, test infrastructure) into the detected cluster registry.
 - **Includes gateway (traefik) image** in the static image list to ensure che-gateway pod has all required images.
+- **Includes docker.io/library images** for IPv6 test infrastructure (python:3.11-alpine).
 - Applies:
   - `ImageTagMirrorSet` and `ImageDigestMirrorSet` (preferred on modern OpenShift)
   - `ImageContentSourcePolicy` (compatibility)
+- Configures mirrors for:
+  - quay.io/eclipse
+  - quay.io/devfile
+  - quay.io/che-incubator
+  - quay.io/openshift
+  - docker.io/library
 - Supports **single-arch optimization** (mirrors only `linux/amd64` when the cluster is single-arch).
 - Uses kubeconfig `proxy-url` (if present) for `skopeo` pushes (since `skopeo` does not read kubeconfig proxies automatically).
 

@@ -889,6 +889,9 @@ spec:
   - source: quay.io/openshift
     mirrors:
     - ${LOCAL_REGISTRY}/eclipse-che/openshift
+  - source: docker.io/library
+    mirrors:
+    - ${LOCAL_REGISTRY}/eclipse-che/library
 EOF
 
 cat > /tmp/che-digest-mirrors.yaml <<EOF
@@ -913,6 +916,9 @@ spec:
   - source: quay.io/openshift
     mirrors:
     - ${LOCAL_REGISTRY}/eclipse-che/openshift
+  - source: docker.io/library
+    mirrors:
+    - ${LOCAL_REGISTRY}/eclipse-che/library
 EOF
 
 echo "Created ImageTagMirrorSet: /tmp/che-tag-mirrors.yaml"
@@ -958,6 +964,11 @@ cat >> /tmp/che-image-policy.yaml <<EOF
   - mirrors:
     - ${LOCAL_REGISTRY}/eclipse-che/devfile
     source: quay.io/devfile
+
+  # Docker Hub images (required for test infrastructure)
+  - mirrors:
+    - ${LOCAL_REGISTRY}/eclipse-che/library
+    source: docker.io/library
 EOF
 
 echo "Created ImageContentSourcePolicy:"

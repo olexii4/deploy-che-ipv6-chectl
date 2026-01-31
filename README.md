@@ -45,7 +45,11 @@ cd deploy-che-ipv6-chectl
 - Automatically extracts gateway (traefik) image from Che operator bundle
 - Pulls all Che images locally (uses cache for faster re-runs)
 - Pushes images to the cluster's local registry via proxy
-- Creates ImageContentSourcePolicy to redirect image pulls
+- Creates ImageContentSourcePolicy to redirect image pulls from:
+  - quay.io/eclipse → local registry
+  - quay.io/devfile → local registry
+  - quay.io/che-incubator → local registry
+  - docker.io/library → local registry (for test infrastructure)
 - **Waits for cluster nodes to reboot** (~10-15 minutes)
 
 **Options:**

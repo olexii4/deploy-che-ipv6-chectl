@@ -354,7 +354,7 @@ spec:
     spec:
       containers:
       - name: server
-        image: python:3.11-alpine
+        image: docker.io/library/python:3.11-alpine
         env:
         - name: EXTERNAL_DEVFILE_URL
           value: "${DEVFILE_URL}"

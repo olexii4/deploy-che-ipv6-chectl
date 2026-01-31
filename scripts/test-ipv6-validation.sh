@@ -364,17 +364,17 @@ spec:
           - |
             apk add --no-cache curl >/dev/null 2>&1 || true
 
-            # Create directory structure
-            mkdir -p /devfiles/nodejs /devfiles/python /devfiles/external
+            # Use /tmp for writable directory (OpenShift security constraints)
+            mkdir -p /tmp/devfiles/nodejs /tmp/devfiles/python /tmp/devfiles/external
 
             # Copy devfiles from ConfigMaps
-            cp /config/nodejs/devfile.yaml /devfiles/nodejs/devfile.yaml
-            cp /config/python/devfile.yaml /devfiles/python/devfile.yaml
+            cp /config/nodejs/devfile.yaml /tmp/devfiles/nodejs/devfile.yaml
+            cp /config/python/devfile.yaml /tmp/devfiles/python/devfile.yaml
 
             # Optionally fetch and mirror an external devfile
             if [ -n "${EXTERNAL_DEVFILE_URL:-}" ]; then
               echo "Fetching external devfile: ${EXTERNAL_DEVFILE_URL}"
-              if curl -fsSL "${EXTERNAL_DEVFILE_URL}" -o /devfiles/external/devfile.yaml; then
+              if curl -fsSL "${EXTERNAL_DEVFILE_URL}" -o /tmp/devfiles/external/devfile.yaml; then
                 echo "✓ External devfile mirrored"
               else
                 echo "⚠ Could not fetch external devfile (will keep sample devfiles only)"
@@ -391,7 +391,7 @@ spec:
                 "description": "Simple Node.js application for IPv6 testing",
                 "type": "stack",
                 "tags": ["NodeJS", "Express", "IPv6"],
-                "url": "/devfiles/nodejs/devfile.yaml",
+                "url": "/nodejs/devfile.yaml",
               },
               {
                 "name": "python-hello-world",
@@ -399,24 +399,24 @@ spec:
                 "description": "Simple Python application for IPv6 testing",
                 "type": "stack",
                 "tags": ["Python", "Flask", "IPv6"],
-                "url": "/devfiles/python/devfile.yaml",
+                "url": "/python/devfile.yaml",
               },
             ]
-            if os.path.exists("/devfiles/external/devfile.yaml"):
+            if os.path.exists("/tmp/devfiles/external/devfile.yaml"):
               items.append({
                 "name": "external-devfile",
                 "displayName": "External Devfile (mirrored)",
                 "description": "Devfile fetched from EXTERNAL_DEVFILE_URL and served over IPv6",
                 "type": "stack",
                 "tags": ["External", "IPv6"],
-                "url": "/devfiles/external/devfile.yaml",
+                "url": "/external/devfile.yaml",
               })
-            with open("/devfiles/index.json", "w") as f:
+            with open("/tmp/devfiles/index.json", "w") as f:
               json.dump(items, f, indent=2)
             PY
 
             # Start HTTP server on all interfaces (:: for IPv4 and IPv6)
-            cd /devfiles
+            cd /tmp/devfiles
             echo "Starting devfile HTTP server on port 8080..."
             python3 -m http.server 8080 --bind ::
         ports:
@@ -500,12 +500,12 @@ spec:
             # Install lighttpd for HTTP server
             apk add --no-cache lighttpd ca-certificates >/dev/null 2>&1 || true
 
-            # Create git repositories
-            mkdir -p /repos/nodejs-hello-world.git
-            mkdir -p /repos/python-hello-world.git
+            # Use /tmp for writable directory (OpenShift security constraints)
+            mkdir -p /tmp/repos/nodejs-hello-world.git
+            mkdir -p /tmp/repos/python-hello-world.git
 
             # Initialize nodejs repository
-            cd /repos/nodejs-hello-world.git
+            cd /tmp/repos/nodejs-hello-world.git
             git init --bare
             git config --local http.receivepack true
             git config --local http.uploadpack true
@@ -517,11 +517,11 @@ spec:
             cp /config/nodejs/* .
             git add .
             git commit -m "Initial commit"
-            git push file:///repos/nodejs-hello-world.git master
-            cd /
+            git push file:///tmp/repos/nodejs-hello-world.git master
+            cd /tmp
 
             # Initialize python repository
-            cd /repos/python-hello-world.git
+            cd /tmp/repos/python-hello-world.git
             git init --bare
             git config --local http.receivepack true
             git config --local http.uploadpack true
@@ -533,22 +533,22 @@ spec:
             cp /config/python/* .
             git add .
             git commit -m "Initial commit"
-            git push file:///repos/python-hello-world.git master
-            cd /
+            git push file:///tmp/repos/python-hello-world.git master
+            cd /tmp
 
             # Update git server info
-            cd /repos/nodejs-hello-world.git
+            cd /tmp/repos/nodejs-hello-world.git
             git update-server-info
-            cd /repos/python-hello-world.git
+            cd /tmp/repos/python-hello-world.git
             git update-server-info
 
             # Optionally mirror an external repository (best effort)
             if [ -n "${EXTERNAL_REPO_URL:-}" ] && [ -n "${EXTERNAL_REPO_NAME:-}" ]; then
               echo "Mirroring external repo: ${EXTERNAL_REPO_URL}"
-              if git clone --mirror "${EXTERNAL_REPO_URL}" "/repos/${EXTERNAL_REPO_NAME}"; then
-                git -C "/repos/${EXTERNAL_REPO_NAME}" config --local http.receivepack true
-                git -C "/repos/${EXTERNAL_REPO_NAME}" config --local http.uploadpack true
-                git -C "/repos/${EXTERNAL_REPO_NAME}" update-server-info || true
+              if git clone --mirror "${EXTERNAL_REPO_URL}" "/tmp/repos/${EXTERNAL_REPO_NAME}"; then
+                git -C "/tmp/repos/${EXTERNAL_REPO_NAME}" config --local http.receivepack true
+                git -C "/tmp/repos/${EXTERNAL_REPO_NAME}" config --local http.uploadpack true
+                git -C "/tmp/repos/${EXTERNAL_REPO_NAME}" update-server-info || true
                 echo "✓ External repo mirrored to /${EXTERNAL_REPO_NAME}"
               else
                 echo "⚠ Could not mirror external repo (will keep sample repos only)"
@@ -556,7 +556,7 @@ spec:
             fi
 
             # Configure lighttpd
-            cat > /etc/lighttpd/lighttpd.conf <<'LIGHTTPD'
+            cat > /tmp/lighttpd.conf <<'LIGHTTPD'
             server.modules = (
                 "mod_access",
                 "mod_alias",
@@ -564,7 +564,7 @@ spec:
                 "mod_setenv"
             )
 
-            server.document-root = "/repos"
+            server.document-root = "/tmp/repos"
             server.port = 8080
             server.bind = "::"
 
@@ -575,7 +575,7 @@ spec:
             \$HTTP["url"] =~ "^/[^/]+\.git/git-upload-pack" {
                 cgi.assign = ( "" => "/usr/libexec/git-core/git-http-backend" )
                 setenv.add-environment = (
-                    "GIT_PROJECT_ROOT" => "/repos",
+                    "GIT_PROJECT_ROOT" => "/tmp/repos",
                     "GIT_HTTP_EXPORT_ALL" => "1"
                 )
             }
@@ -583,7 +583,7 @@ spec:
             \$HTTP["url"] =~ "^/[^/]+\.git/git-receive-pack" {
                 cgi.assign = ( "" => "/usr/libexec/git-core/git-http-backend" )
                 setenv.add-environment = (
-                    "GIT_PROJECT_ROOT" => "/repos",
+                    "GIT_PROJECT_ROOT" => "/tmp/repos",
                     "GIT_HTTP_EXPORT_ALL" => "1"
                 )
             }
@@ -591,7 +591,7 @@ spec:
             \$HTTP["url"] =~ "^/[^/]+\.git/info/refs" {
                 cgi.assign = ( "" => "/usr/libexec/git-core/git-http-backend" )
                 setenv.add-environment = (
-                    "GIT_PROJECT_ROOT" => "/repos",
+                    "GIT_PROJECT_ROOT" => "/tmp/repos",
                     "GIT_HTTP_EXPORT_ALL" => "1"
                 )
             }
@@ -599,7 +599,7 @@ spec:
 
             # Start lighttpd
             echo "Starting git HTTP server on port 8080..."
-            lighttpd -D -f /etc/lighttpd/lighttpd.conf
+            lighttpd -D -f /tmp/lighttpd.conf
         ports:
         - containerPort: 8080
           name: http
@@ -711,15 +711,16 @@ echo -e "${GREEN}║     Test Infrastructure Deployed Successfully!             
 echo -e "${GREEN}╚════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
-echo -e "${BLUE}IPv6 Test URLs for Eclipse Che Factory:${NC}"
+echo -e "${BLUE}IPv6 Test URLs for Eclipse Che:${NC}"
 echo ""
-echo "Node.js Hello World (via IPv6):"
-echo "  http://[${GIT_IPV6}]:8080/nodejs-hello-world.git"
-echo "  with devfile: http://[${GIT_IPV6}]:8080/nodejs-hello-world.git?df=http://[${DEVFILE_IPV6}]:8080/devfiles/nodejs/devfile.yaml"
+echo "Devfile Server (IPv6):"
+echo "  Index:         http://[${DEVFILE_IPV6}]:8080/index.json"
+echo "  Node.js:       http://[${DEVFILE_IPV6}]:8080/nodejs/devfile.yaml"
+echo "  Python:        http://[${DEVFILE_IPV6}]:8080/python/devfile.yaml"
 echo ""
-echo "Python Hello World (via IPv6):"
-echo "  http://[${GIT_IPV6}]:8080/python-hello-world.git"
-echo "  with devfile: http://[${GIT_IPV6}]:8080/python-hello-world.git?df=http://[${DEVFILE_IPV6}]:8080/devfiles/python/devfile.yaml"
+echo "Git Server (IPv6):"
+echo "  Node.js repo:  http://[${GIT_IPV6}]:8080/nodejs-hello-world.git"
+echo "  Python repo:   http://[${GIT_IPV6}]:8080/python-hello-world.git"
 echo ""
 
 if [ -n "${REPO_NAME}" ]; then
@@ -735,21 +736,41 @@ if [ -n "${REPO_NAME}" ]; then
     echo "External repo (mirrored, via IPv6):"
     echo "  http://[${GIT_IPV6}]:8080/${REPO_NAME}"
     if [ -n "${DEVFILE_URL}" ]; then
-        echo "  with devfile (mirrored): http://[${GIT_IPV6}]:8080/${REPO_NAME}?df=http://[${DEVFILE_IPV6}]:8080/devfiles/external/devfile.yaml"
+        echo "  with devfile (mirrored): http://[${GIT_IPV6}]:8080/${REPO_NAME}?df=http://[${DEVFILE_IPV6}]:8080/external/devfile.yaml"
     fi
     echo ""
 fi
 
-echo -e "${BLUE}Testing with Che Dashboard:${NC}"
+echo -e "${BLUE}Testing IPv6 URL Support in Che Dashboard:${NC}"
+echo ""
+echo "IMPORTANT: The cluster proxy does NOT support IPv6 URLs directly in browser."
+echo "Use the Che Dashboard API instead:"
 echo ""
 echo "1. Get Che URL:"
 echo "   CHE_URL=\$(oc get checluster eclipse-che -n ${CHE_NAMESPACE} -o jsonpath='{.status.cheURL}')"
 echo "   echo \$CHE_URL"
 echo ""
-echo "2. Open factory URL in browser:"
-echo "   \${CHE_URL}/#http://[${GIT_IPV6}]:8080/nodejs-hello-world.git"
+echo "2. Launch Chrome with proxy:"
+echo "   # macOS"
+echo "   killall \"Google Chrome\" 2>/dev/null"
+echo "   /Applications/Google\\ Chrome.app/Contents/MacOS/Google\\ Chrome \\"
+echo "     --proxy-server=\"\$(grep proxy-url \$KUBECONFIG | awk '{print \$2}')\" \\"
+echo "     --user-data-dir=\"/tmp/chrome-che-proxy-\$(date +%s)\" \\"
+echo "     --no-first-run \\"
+echo "     \"\${CHE_URL}/dashboard/api/swagger/static/index.html\""
 echo ""
-echo "3. Verify workspace creation succeeds with IPv6 URL"
+echo "3. Test IPv6 URLs via Swagger API (POST /dashboard/api/data/resolver):"
+echo ""
+echo "   Test devfile index:"
+echo "   {\"url\": \"http://[${DEVFILE_IPV6}]:8080/index.json\"}"
+echo ""
+echo "   Test Node.js devfile:"
+echo "   {\"url\": \"http://[${DEVFILE_IPV6}]:8080/nodejs/devfile.yaml\"}"
+echo ""
+echo "   Test Python devfile:"
+echo "   {\"url\": \"http://[${DEVFILE_IPV6}]:8080/python/devfile.yaml\"}"
+echo ""
+echo "4. Expected result: HTTP 200 with devfile content (confirms IPv6 URL support works)"
 echo ""
 
 echo -e "${BLUE}Cleanup:${NC}"

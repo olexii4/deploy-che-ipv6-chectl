@@ -156,17 +156,26 @@ If you prefer to use a browser extension instead:
 
 ### 5. Run IPv6 Validation Tests
 
-Execute the automated test suite:
+Deploy IPv6 test infrastructure:
 
 ```bash
 ./scripts/test-ipv6-validation.sh --kubeconfig ~/ostest-kubeconfig.yaml
 ```
 
-The test script validates:
-- ✅ IPv6 URL parsing in factory flows
-- ✅ Workspace creation from IPv6 Git repositories
-- ✅ Support for various IPv6 URL formats
-- ✅ Dashboard handling of IPv6 addresses
+The test script:
+- ✅ Deploys devfile and git HTTP servers with IPv6 ClusterIPs
+- ✅ Creates sample Node.js and Python devfiles
+- ✅ Provides test URLs and Swagger API testing instructions
+- ✅ Shows commands to launch Chrome with proxy for API testing
+
+**Testing via Swagger API** (recommended):
+
+The cluster proxy does not support IPv6 URLs in browser directly. Use the Dashboard Swagger API:
+
+1. Launch Chrome with proxy (command shown in script output)
+2. Open: `${CHE_URL}/dashboard/api/swagger/static/index.html`
+3. Test IPv6 URLs via `POST /dashboard/api/data/resolver` endpoint
+4. Expected result: HTTP 200 with devfile content (confirms IPv6 support works)
 
 ## Test Scenarios
 

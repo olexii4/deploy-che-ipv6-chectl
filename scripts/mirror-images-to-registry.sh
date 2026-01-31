@@ -329,9 +329,10 @@ if [ "${MODE}" = "full" ]; then
     # NOTE: This tag includes a commit hash and may change when Che operator updates
     "quay.io/eclipse/che--traefik:v3.6.7-2c5e029ee3638d3788b4ca7c8ef454baa8f924b91b190b3fd2742bee721ebeea"
 
-    # Test infrastructure image - required by IPv6 validation test script
+    # Test infrastructure images - required by IPv6 validation test script
     # Used by test-ipv6-validation.sh to deploy devfile and git servers
     "docker.io/library/python:3.11-alpine"
+    "docker.io/alpine/git:latest"
   )
 fi
 
@@ -892,6 +893,9 @@ spec:
   - source: docker.io/library
     mirrors:
     - ${LOCAL_REGISTRY}/eclipse-che/library
+  - source: docker.io/alpine
+    mirrors:
+    - ${LOCAL_REGISTRY}/eclipse-che/alpine
 EOF
 
 cat > /tmp/che-digest-mirrors.yaml <<EOF
@@ -919,6 +923,9 @@ spec:
   - source: docker.io/library
     mirrors:
     - ${LOCAL_REGISTRY}/eclipse-che/library
+  - source: docker.io/alpine
+    mirrors:
+    - ${LOCAL_REGISTRY}/eclipse-che/alpine
 EOF
 
 echo "Created ImageTagMirrorSet: /tmp/che-tag-mirrors.yaml"
@@ -969,6 +976,9 @@ cat >> /tmp/che-image-policy.yaml <<EOF
   - mirrors:
     - ${LOCAL_REGISTRY}/eclipse-che/library
     source: docker.io/library
+  - mirrors:
+    - ${LOCAL_REGISTRY}/eclipse-che/alpine
+    source: docker.io/alpine
 EOF
 
 echo "Created ImageContentSourcePolicy:"

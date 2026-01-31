@@ -50,6 +50,7 @@ cd deploy-che-ipv6-chectl
   - quay.io/devfile → local registry
   - quay.io/che-incubator → local registry
   - docker.io/library → local registry (for test infrastructure)
+  - docker.io/alpine → local registry (for test infrastructure)
 - **Waits for cluster nodes to reboot** (~10-15 minutes)
 
 **Options:**

@@ -503,8 +503,11 @@ spec:
             # Use /tmp for writable directory (OpenShift security constraints)
             mkdir -p /tmp/repos/nodejs-hello-world.git
             mkdir -p /tmp/repos/python-hello-world.git
+            mkdir -p /tmp/repos/testuser/nodejs-hello-world.git
+            mkdir -p /tmp/repos/testuser/python-hello-world.git
+            mkdir -p /tmp/cgi-bin
 
-            # Initialize nodejs repository
+            # Initialize nodejs repository (.git suffix for direct git access)
             cd /tmp/repos/nodejs-hello-world.git
             git init --bare
             git config --local http.receivepack true
@@ -520,7 +523,7 @@ spec:
             git push file:///tmp/repos/nodejs-hello-world.git master
             cd /tmp
 
-            # Initialize python repository
+            # Initialize python repository (.git suffix for direct git access)
             cd /tmp/repos/python-hello-world.git
             git init --bare
             git config --local http.receivepack true
@@ -536,11 +539,36 @@ spec:
             git push file:///tmp/repos/python-hello-world.git master
             cd /tmp
 
-            # Update git server info
-            cd /tmp/repos/nodejs-hello-world.git
-            git update-server-info
-            cd /tmp/repos/python-hello-world.git
-            git update-server-info
+            # Create GitHub-style repositories (user/repo format)
+            # These are clones of the .git repos but accessible via GitHub-style URLs
+            cd /tmp/repos/testuser/nodejs-hello-world.git
+            git init --bare
+            git config --local http.receivepack true
+            git config --local http.uploadpack true
+            git --git-dir=/tmp/repos/nodejs-hello-world.git push --mirror file:///tmp/repos/testuser/nodejs-hello-world.git
+
+            cd /tmp/repos/testuser/python-hello-world.git
+            git init --bare
+            git config --local http.receivepack true
+            git config --local http.uploadpack true
+            git --git-dir=/tmp/repos/python-hello-world.git push --mirror file:///tmp/repos/testuser/python-hello-world.git
+
+            # Update git server info for all repos
+            cd /tmp/repos/nodejs-hello-world.git && git update-server-info
+            cd /tmp/repos/python-hello-world.git && git update-server-info
+            cd /tmp/repos/testuser/nodejs-hello-world.git && git update-server-info
+            cd /tmp/repos/testuser/python-hello-world.git && git update-server-info
+
+            # Create GitHub API mock endpoint
+            cat > /tmp/cgi-bin/github-api.sh <<'API_SCRIPT'
+#!/bin/sh
+# Simple GitHub API mock for testing IPv6 URL recognition
+echo "Content-Type: application/json"
+echo "Status: 200 OK"
+echo ""
+echo '{"id":1,"name":"test-repo","full_name":"testuser/test-repo","private":false,"owner":{"login":"testuser","id":1},"html_url":"http://localhost/testuser/test-repo","description":"Test repository","fork":false,"default_branch":"master"}'
+API_SCRIPT
+            chmod +x /tmp/cgi-bin/github-api.sh
 
             # Optionally mirror an external repository (best effort)
             if [ -n "${EXTERNAL_REPO_URL:-}" ] && [ -n "${EXTERNAL_REPO_NAME:-}" ]; then
@@ -561,7 +589,9 @@ spec:
                 "mod_access",
                 "mod_alias",
                 "mod_cgi",
-                "mod_setenv"
+                "mod_setenv",
+                "mod_redirect",
+                "mod_rewrite"
             )
 
             server.document-root = "/tmp/repos"
@@ -569,9 +599,44 @@ spec:
             server.bind = "::"
 
             mimetype.assign = (
-                ".git" => "application/x-git"
+                ".git" => "application/x-git",
+                ".json" => "application/json"
             )
 
+            # GitHub API endpoints
+            \$HTTP["url"] =~ "^/api/v3/" {
+                cgi.assign = ( "" => "/tmp/cgi-bin/github-api.sh" )
+            }
+
+            # GitHub-style URLs: /user/repo -> /user/repo.git (git HTTP backend)
+            \$HTTP["url"] =~ "^/[^/]+/[^/]+/info/refs" {
+                url.rewrite-once = ( "^/([^/]+)/([^/]+)/(.*)$" => "/\$1/\$2.git/\$3" )
+                cgi.assign = ( "" => "/usr/libexec/git-core/git-http-backend" )
+                setenv.add-environment = (
+                    "GIT_PROJECT_ROOT" => "/tmp/repos",
+                    "GIT_HTTP_EXPORT_ALL" => "1"
+                )
+            }
+
+            \$HTTP["url"] =~ "^/[^/]+/[^/]+/git-upload-pack" {
+                url.rewrite-once = ( "^/([^/]+)/([^/]+)/(.*)$" => "/\$1/\$2.git/\$3" )
+                cgi.assign = ( "" => "/usr/libexec/git-core/git-http-backend" )
+                setenv.add-environment = (
+                    "GIT_PROJECT_ROOT" => "/tmp/repos",
+                    "GIT_HTTP_EXPORT_ALL" => "1"
+                )
+            }
+
+            \$HTTP["url"] =~ "^/[^/]+/[^/]+/git-receive-pack" {
+                url.rewrite-once = ( "^/([^/]+)/([^/]+)/(.*)$" => "/\$1/\$2.git/\$3" )
+                cgi.assign = ( "" => "/usr/libexec/git-core/git-http-backend" )
+                setenv.add-environment = (
+                    "GIT_PROJECT_ROOT" => "/tmp/repos",
+                    "GIT_HTTP_EXPORT_ALL" => "1"
+                )
+            }
+
+            # Standard .git repositories
             \$HTTP["url"] =~ "^/[^/]+\.git/git-upload-pack" {
                 cgi.assign = ( "" => "/usr/libexec/git-core/git-http-backend" )
                 setenv.add-environment = (
@@ -722,6 +787,11 @@ echo "Git Server (IPv6):"
 echo "  Node.js repo:  http://[${GIT_IPV6}]:8080/nodejs-hello-world.git"
 echo "  Python repo:   http://[${GIT_IPV6}]:8080/python-hello-world.git"
 echo ""
+echo "GitHub-style URLs (IPv6) - for testing GitHub URL parser:"
+echo "  Node.js repo:  http://[${GIT_IPV6}]:8080/testuser/nodejs-hello-world"
+echo "  Python repo:   http://[${GIT_IPV6}]:8080/testuser/python-hello-world"
+echo "  GitHub API:    http://[${GIT_IPV6}]:8080/api/v3/user"
+echo ""
 
 if [ -n "${REPO_NAME}" ]; then
     echo "External inputs:"
@@ -769,6 +839,9 @@ echo "   {\"url\": \"http://[${DEVFILE_IPV6}]:8080/nodejs/devfile.yaml\"}"
 echo ""
 echo "   Test Python devfile:"
 echo "   {\"url\": \"http://[${DEVFILE_IPV6}]:8080/python/devfile.yaml\"}"
+echo ""
+echo "   Test GitHub-style URL (tests GitHub URL parser with IPv6):"
+echo "   {\"url\": \"http://[${GIT_IPV6}]:8080/testuser/nodejs-hello-world\"}"
 echo ""
 echo "4. Expected result: HTTP 200 with devfile content (confirms IPv6 URL support works)"
 echo ""

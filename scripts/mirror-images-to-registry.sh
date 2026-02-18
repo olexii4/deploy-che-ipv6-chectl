@@ -16,7 +16,8 @@
 #   --kubeconfig <file>      Path to kubeconfig file (uses proxy-url from kubeconfig)
 #   --registry <host:port>   Local registry (default: auto-detect from cluster)
 #   --namespace <namespace>  Che namespace (default: eclipse-che)
-#   --dashboard-image <image> Dashboard image (default: quay.io/eclipse/che-dashboard:pr-1442)
+#   --dashboard-image <image> Dashboard image (shortcuts: pr-XXXX, next, latest; default: pr-1442)
+#   --che-server-image <image> Che server image (shortcuts: pr-XXXX, next, latest; default: next)
 #   --mirror-from-namespace <ns>
 #                           Additionally mirror images referenced by Pods in this namespace.
 #                           Can be specified multiple times (e.g. openshift-marketplace, openshift-operators, eclipse-che).
@@ -55,6 +56,7 @@ NC='\033[0m' # No Color
 LOCAL_REGISTRY=""
 NAMESPACE="eclipse-che"
 DASHBOARD_IMAGE="quay.io/eclipse/che-dashboard:pr-1442"
+CHE_SERVER_IMAGE="quay.io/eclipse/che-server:next"
 CHE_OPERATOR_IMAGE="quay.io/eclipse/che-operator:next"
 MODE="full"
 QUAY_CREDS="${QUAY_CREDS:-}"
@@ -104,6 +106,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --dashboard-image)
             DASHBOARD_IMAGE="$2"
+            shift 2
+            ;;
+        --che-server-image)
+            CHE_SERVER_IMAGE="$2"
             shift 2
             ;;
         --mirror-from-namespace)
@@ -211,6 +217,19 @@ case "$DASHBOARD_IMAGE" in
         ;;
 esac
 
+# Expand che-server image shortcuts (pr-XXXX, next, latest)
+case "$CHE_SERVER_IMAGE" in
+    pr-*)
+        CHE_SERVER_IMAGE="quay.io/eclipse/che-server:$CHE_SERVER_IMAGE"
+        ;;
+    next)
+        CHE_SERVER_IMAGE="quay.io/eclipse/che-server:next"
+        ;;
+    latest)
+        CHE_SERVER_IMAGE="quay.io/eclipse/che-server:latest"
+        ;;
+esac
+
 echo -e "${BLUE}╔════════════════════════════════════════════════════════════╗${NC}"
 echo -e "${BLUE}║     Mirror Eclipse Che Images to Local Registry           ║${NC}"
 echo -e "${BLUE}╚════════════════════════════════════════════════════════════╝${NC}"
@@ -294,7 +313,7 @@ IMAGES=()
 IMAGES+=(
   "${CHE_OPERATOR_IMAGE}"
   "${DASHBOARD_IMAGE}"
-  "quay.io/eclipse/che-server:next"
+  "${CHE_SERVER_IMAGE}"
   # Gateway uses configbump:next
   "quay.io/che-incubator/configbump:next"
   # Gateway sidecars on OpenShift

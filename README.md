@@ -36,6 +36,7 @@ cd deploy-che-ipv6-chectl
 ./scripts/mirror-images-to-registry.sh \
   --kubeconfig ~/ostest-kubeconfig.yaml \
   --dashboard-image pr-1442 \
+  --che-server-image pr-951 \
   --mode full \
   --parallel 4
 ```
@@ -57,6 +58,7 @@ cd deploy-che-ipv6-chectl
 ```
 --kubeconfig <path>         Path to kubeconfig file (required)
 --dashboard-image <image>   Dashboard image (shortcuts: pr-XXXX, next, latest)
+--che-server-image <image>  Che server image (shortcuts: pr-XXXX, next, latest)
 --mode <minimal|full>       Image set: minimal (Che only) or full (includes DevWorkspace)
 --parallel <N>              Concurrent image copies (default: 1, recommended: 4)
 ```

@@ -164,11 +164,23 @@ Deploy IPv6 test infrastructure:
 ./scripts/test-ipv6-validation.sh --kubeconfig ~/ostest-kubeconfig.yaml
 ```
 
-The test script:
-- ✅ Deploys devfile and git HTTP servers with IPv6 ClusterIPs
-- ✅ Creates sample Node.js and Python devfiles
-- ✅ Provides test URLs and Swagger API testing instructions
-- ✅ Shows commands to launch Chrome with proxy for API testing
+**What the test infrastructure deploys:**
+
+1. **Devfile HTTP Server** (Python-based, IPv6)
+   - Serves sample devfiles at `http://[IPv6]:8080/nodejs/devfile.yaml`
+   - Provides devfile index at `http://[IPv6]:8080/index.json`
+   - Can mirror external devfiles from registry.devfile.io
+   - Tests: Che Dashboard's ability to fetch devfiles from IPv6 URLs
+
+2. **Git HTTP Server** (lighttpd-based, IPv6)
+   - Serves git repositories at `http://[IPv6]:8080/*.git`
+   - Supports GitHub-style URLs: `http://[IPv6]:8080/user/repo`
+   - Includes GitHub API mock endpoints
+   - Tests: Factory URL parser with IPv6 git repository URLs
+
+3. **Sample Content**
+   - Node.js and Python devfiles with matching git repositories
+   - Optional external repository mirroring
 
 **Testing via Swagger API** (recommended):
 

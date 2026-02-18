@@ -17,9 +17,22 @@
 # to validate Eclipse Che Dashboard PR-1442 IPv6 URL support.
 #
 # Infrastructure deployed:
-# - Devfile HTTP server (serving sample devfiles via IPv6)
-# - Git HTTP server (serving test repositories via IPv6)
-# - Sample repositories and devfiles
+#
+# 1. Devfile HTTP Server (Python-based, serves devfiles via IPv6)
+#    - Hosts sample devfiles (Node.js, Python) at http://[IPv6]:8080/
+#    - Provides index.json with list of available devfiles
+#    - Can mirror and serve external devfiles from registry.devfile.io
+#    - Purpose: Test Che Dashboard's ability to fetch devfiles from IPv6 URLs
+#
+# 2. Git HTTP Server (lighttpd-based, serves git repositories via IPv6)
+#    - Hosts git repositories at http://[IPv6]:8080/*.git
+#    - Supports GitHub-style URLs: http://[IPv6]:8080/user/repo
+#    - Includes GitHub API mock endpoints (/api/v3/*)
+#    - Purpose: Test Che Dashboard's factory URL parser with IPv6 git URLs
+#
+# 3. Sample Test Content
+#    - Node.js and Python devfiles + git repositories
+#    - Optional external repository mirroring
 #
 # Prerequisites:
 # - OpenShift cluster with IPv6 networking

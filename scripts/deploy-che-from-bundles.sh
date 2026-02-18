@@ -1,7 +1,17 @@
 #!/bin/bash
 
-# Manual Eclipse Che deployment by extracting manifests from OLM bundle images
-# Bypasses IPv6 ClusterIP catalog connectivity issues
+# Eclipse Che Deployment from OLM Bundles
+#
+# Automated script for deploying Eclipse Che operators without OLM (Operator Lifecycle Manager).
+# Instead of using OLM catalog, this script:
+#   1. Extracts operator manifests directly from OLM bundle images
+#   2. Applies them manually to the cluster
+#   3. Creates CheCluster custom resource
+#
+# Why this approach:
+#   - Bypasses OLM catalog networking issues on IPv6-only clusters
+#   - Works when catalog pods cannot pull images due to IPv6 ClusterIP connectivity
+#   - Uses official OLM bundle images (same source as OLM would use)
 
 set -e
 

@@ -40,7 +40,7 @@ Mirror all images to the cluster's local registry (IPv6 clusters cannot pull fro
 Deploy Che with your PR's che-server image:
 
 ```bash
-./scripts/deploy-che-manual-from-bundles.sh \
+./scripts/deploy-che-from-bundles.sh \
   --kubeconfig ~/ostest-kubeconfig.yaml \
   --dashboard-image pr-1442 \
   --che-server-image quay.io/eclipse/che-server:pr-951 \

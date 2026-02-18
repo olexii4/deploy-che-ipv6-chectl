@@ -74,7 +74,7 @@ cd deploy-che-ipv6-chectl
 
 ```bash
 # Deploy Eclipse Che
-./scripts/deploy-che-manual-from-bundles.sh \
+./scripts/deploy-che-from-bundles.sh \
   --kubeconfig ~/ostest-kubeconfig.yaml \
   --dashboard-image pr-1442 \
   --namespace eclipse-che
@@ -243,7 +243,7 @@ The deployment script extracts operator manifests directly from OLM bundle image
 
 ### Scripts
 
-- **[scripts/deploy-che-manual-from-bundles.sh](./scripts/deploy-che-manual-from-bundles.sh)** - Manual operator deployment from OLM bundles
+- **[scripts/deploy-che-from-bundles.sh](./scripts/deploy-che-from-bundles.sh)** - Manual operator deployment from OLM bundles
 - **[scripts/test-ipv6-validation.sh](./scripts/test-ipv6-validation.sh)** - Automated IPv6 validation test suite
 - **[scripts/diagnose-che-access.sh](./scripts/diagnose-che-access.sh)** - Diagnose Che dashboard access issues
 
@@ -264,7 +264,7 @@ Port-forward access does not work for Che login due to OAuth redirect URI mismat
 
 ### Issue: Deployment fails with "cannot connect to catalog"
 
-**Solution:** Use the manual deployment script `deploy-che-manual-from-bundles.sh` which bypasses OLM catalog networking.
+**Solution:** Use the manual deployment script `deploy-che-from-bundles.sh` which bypasses OLM catalog networking.
 
 For detailed troubleshooting, see [scripts/diagnose-che-access.md](./scripts/diagnose-che-access.md)
 

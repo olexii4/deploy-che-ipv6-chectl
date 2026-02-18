@@ -1043,7 +1043,7 @@ echo "  2. Verify nodes are Ready:"
 echo "     oc get nodes"
 echo ""
 echo "  3. Deploy Eclipse Che:"
-echo "     ./scripts/deploy-che-manual-from-bundles.sh --kubeconfig <kubeconfig> --dashboard-image pr-1442"
+echo "     ./scripts/deploy-che-from-bundles.sh --kubeconfig <kubeconfig> --dashboard-image pr-1442"
 echo ""
 
 echo -e "${BLUE}Troubleshooting:${NC}"

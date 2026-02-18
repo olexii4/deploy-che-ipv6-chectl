@@ -144,4 +144,4 @@ echo "1. Run chectl deployment again with the patched catalogs"
 echo "2. Monitor if OLM can now resolve the subscription"
 echo
 echo "Command to retry deployment:"
-echo "  ./scripts/deploy-che-manual-from-bundles.sh --kubeconfig $KUBECONFIG --dashboard-image pr-1442"
+echo "  ./scripts/deploy-che-from-bundles.sh --kubeconfig $KUBECONFIG --dashboard-image pr-1442"

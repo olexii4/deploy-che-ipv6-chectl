@@ -247,6 +247,7 @@ The deployment script extracts operator manifests directly from OLM bundle image
 
 ### Documentation
 
+- **[docs/testing-che-server-ipv6.md](./docs/testing-che-server-ipv6.md)** - Complete guide for testing Eclipse Che Server IPv6 support with custom images
 - **[scripts/diagnose-che-access.md](./scripts/diagnose-che-access.md)** - Troubleshooting guide for IPv6 networking issues
 
 ## Troubleshooting

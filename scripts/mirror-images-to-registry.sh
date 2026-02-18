@@ -17,7 +17,7 @@
 #   --registry <host:port>   Local registry (default: auto-detect from cluster)
 #   --namespace <namespace>  Che namespace (default: eclipse-che)
 #   --dashboard-image <image> Dashboard image (shortcuts: pr-XXXX, next, latest; default: pr-1442)
-#   --che-server-image <image> Che server image (shortcuts: pr-XXXX, next, latest; default: next)
+#   --server-image <image>    Che server image (shortcuts: pr-XXXX, next, latest; default: next)
 #   --mirror-from-namespace <ns>
 #                           Additionally mirror images referenced by Pods in this namespace.
 #                           Can be specified multiple times (e.g. openshift-marketplace, openshift-operators, eclipse-che).
@@ -108,7 +108,7 @@ while [[ $# -gt 0 ]]; do
             DASHBOARD_IMAGE="$2"
             shift 2
             ;;
-        --che-server-image)
+        --server-image|--che-server-image)
             CHE_SERVER_IMAGE="$2"
             shift 2
             ;;

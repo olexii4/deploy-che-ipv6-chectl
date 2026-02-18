@@ -1,0 +1,34 @@
+apiVersion: org.eclipse.che/v2
+kind: CheCluster
+metadata:
+  name: eclipse-che
+  namespace: ${NAMESPACE}
+spec:
+  components:
+    cheServer:
+      debug: false
+      logLevel: INFO
+      deployment:
+        containers:
+          - name: che-server${CHE_SERVER_IMAGE_LINE}
+            imagePullPolicy: Always
+
+    dashboard:
+      deployment:
+        containers:
+          - name: dashboard${DASHBOARD_IMAGE_LINE}
+            imagePullPolicy: Always
+
+  devEnvironments:
+    startTimeoutSeconds: 600
+    defaultEditor: che-incubator/che-code/latest
+    defaultComponents:
+      - name: universal-developer-image
+        container:
+          image: quay.io/devfile/universal-developer-image:ubi9-latest
+          memoryLimit: 4Gi
+          memoryRequest: 2Gi
+
+  networking:
+    auth:
+      identityProviderURL: ""

@@ -1,0 +1,238 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: git-server
+  namespace: ${NAMESPACE}
+  labels:
+    app: git-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: git-server
+  template:
+    metadata:
+      labels:
+        app: git-server
+    spec:
+      containers:
+      - name: server
+        image: alpine/git:latest
+        env:
+        - name: EXTERNAL_REPO_URL
+          value: "${REPO_URL_NORM}"
+        - name: EXTERNAL_REPO_NAME
+          value: "${REPO_NAME}"
+        command:
+          - sh
+          - -c
+          - |
+            # Install lighttpd for HTTP server
+            apk add --no-cache lighttpd ca-certificates >/dev/null 2>&1 || true
+
+            # Use /tmp for writable directory (OpenShift security constraints)
+            mkdir -p /tmp/repos/nodejs-hello-world.git
+            mkdir -p /tmp/repos/python-hello-world.git
+            mkdir -p /tmp/repos/testuser/nodejs-hello-world.git
+            mkdir -p /tmp/repos/testuser/python-hello-world.git
+            mkdir -p /tmp/cgi-bin
+
+            # Initialize nodejs repository (.git suffix for direct git access)
+            cd /tmp/repos/nodejs-hello-world.git
+            git init --bare
+            git config --local http.receivepack true
+            git config --local http.uploadpack true
+
+            # Create working copy and commit files
+            TEMP_DIR=$$(mktemp -d)
+            cd $$TEMP_DIR
+            git init
+            cp /config/nodejs/* .
+            git add .
+            git commit -m "Initial commit"
+            git push file:///tmp/repos/nodejs-hello-world.git master
+            cd /tmp
+
+            # Initialize python repository (.git suffix for direct git access)
+            cd /tmp/repos/python-hello-world.git
+            git init --bare
+            git config --local http.receivepack true
+            git config --local http.uploadpack true
+
+            # Create working copy and commit files
+            TEMP_DIR=$$(mktemp -d)
+            cd $$TEMP_DIR
+            git init
+            cp /config/python/* .
+            git add .
+            git commit -m "Initial commit"
+            git push file:///tmp/repos/python-hello-world.git master
+            cd /tmp
+
+            # Create GitHub-style repositories (user/repo format)
+            # These are clones of the .git repos but accessible via GitHub-style URLs
+            cd /tmp/repos/testuser/nodejs-hello-world.git
+            git init --bare
+            git config --local http.receivepack true
+            git config --local http.uploadpack true
+            git --git-dir=/tmp/repos/nodejs-hello-world.git push --mirror file:///tmp/repos/testuser/nodejs-hello-world.git
+
+            cd /tmp/repos/testuser/python-hello-world.git
+            git init --bare
+            git config --local http.receivepack true
+            git config --local http.uploadpack true
+            git --git-dir=/tmp/repos/python-hello-world.git push --mirror file:///tmp/repos/testuser/python-hello-world.git
+
+            # Update git server info for all repos
+            cd /tmp/repos/nodejs-hello-world.git && git update-server-info
+            cd /tmp/repos/python-hello-world.git && git update-server-info
+            cd /tmp/repos/testuser/nodejs-hello-world.git && git update-server-info
+            cd /tmp/repos/testuser/python-hello-world.git && git update-server-info
+
+            # Create GitHub API mock endpoint
+            cat > /tmp/cgi-bin/github-api.sh <<'API_SCRIPT'
+#!/bin/sh
+# Simple GitHub API mock for testing IPv6 URL recognition
+echo "Content-Type: application/json"
+echo "Status: 200 OK"
+echo ""
+echo '{"id":1,"name":"test-repo","full_name":"testuser/test-repo","private":false,"owner":{"login":"testuser","id":1},"html_url":"http://localhost/testuser/test-repo","description":"Test repository","fork":false,"default_branch":"master"}'
+API_SCRIPT
+            chmod +x /tmp/cgi-bin/github-api.sh
+
+            # Optionally mirror an external repository (best effort)
+            if [ -n "$${EXTERNAL_REPO_URL:-}" ] && [ -n "$${EXTERNAL_REPO_NAME:-}" ]; then
+              echo "Mirroring external repo: $${EXTERNAL_REPO_URL}"
+              if git clone --mirror "$${EXTERNAL_REPO_URL}" "/tmp/repos/$${EXTERNAL_REPO_NAME}"; then
+                git -C "/tmp/repos/$${EXTERNAL_REPO_NAME}" config --local http.receivepack true
+                git -C "/tmp/repos/$${EXTERNAL_REPO_NAME}" config --local http.uploadpack true
+                git -C "/tmp/repos/$${EXTERNAL_REPO_NAME}" update-server-info || true
+                echo "✓ External repo mirrored to /$${EXTERNAL_REPO_NAME}"
+              else
+                echo "⚠ Could not mirror external repo (will keep sample repos only)"
+              fi
+            fi
+
+            # Configure lighttpd
+            cat > /tmp/lighttpd.conf <<'LIGHTTPD'
+            server.modules = (
+                "mod_access",
+                "mod_alias",
+                "mod_cgi",
+                "mod_setenv",
+                "mod_redirect",
+                "mod_rewrite"
+            )
+
+            server.document-root = "/tmp/repos"
+            server.port = 8080
+            server.bind = "::"
+
+            mimetype.assign = (
+                ".git" => "application/x-git",
+                ".json" => "application/json"
+            )
+
+            # GitHub API endpoints
+            $$HTTP["url"] =~ "^/api/v3/" {
+                cgi.assign = ( "" => "/tmp/cgi-bin/github-api.sh" )
+            }
+
+            # GitHub-style URLs: /user/repo -> /user/repo.git (git HTTP backend)
+            $$HTTP["url"] =~ "^/[^/]+/[^/]+/info/refs" {
+                url.rewrite-once = ( "^/([^/]+)/([^/]+)/(.*)$$" => "/$$1/$$2.git/$$3" )
+                cgi.assign = ( "" => "/usr/libexec/git-core/git-http-backend" )
+                setenv.add-environment = (
+                    "GIT_PROJECT_ROOT" => "/tmp/repos",
+                    "GIT_HTTP_EXPORT_ALL" => "1"
+                )
+            }
+
+            $$HTTP["url"] =~ "^/[^/]+/[^/]+/git-upload-pack" {
+                url.rewrite-once = ( "^/([^/]+)/([^/]+)/(.*)$$" => "/$$1/$$2.git/$$3" )
+                cgi.assign = ( "" => "/usr/libexec/git-core/git-http-backend" )
+                setenv.add-environment = (
+                    "GIT_PROJECT_ROOT" => "/tmp/repos",
+                    "GIT_HTTP_EXPORT_ALL" => "1"
+                )
+            }
+
+            $$HTTP["url"] =~ "^/[^/]+/[^/]+/git-receive-pack" {
+                url.rewrite-once = ( "^/([^/]+)/([^/]+)/(.*)$$" => "/$$1/$$2.git/$$3" )
+                cgi.assign = ( "" => "/usr/libexec/git-core/git-http-backend" )
+                setenv.add-environment = (
+                    "GIT_PROJECT_ROOT" => "/tmp/repos",
+                    "GIT_HTTP_EXPORT_ALL" => "1"
+                )
+            }
+
+            # Standard .git repositories
+            $$HTTP["url"] =~ "^/[^/]+\.git/git-upload-pack" {
+                cgi.assign = ( "" => "/usr/libexec/git-core/git-http-backend" )
+                setenv.add-environment = (
+                    "GIT_PROJECT_ROOT" => "/tmp/repos",
+                    "GIT_HTTP_EXPORT_ALL" => "1"
+                )
+            }
+
+            $$HTTP["url"] =~ "^/[^/]+\.git/git-receive-pack" {
+                cgi.assign = ( "" => "/usr/libexec/git-core/git-http-backend" )
+                setenv.add-environment = (
+                    "GIT_PROJECT_ROOT" => "/tmp/repos",
+                    "GIT_HTTP_EXPORT_ALL" => "1"
+                )
+            }
+
+            $$HTTP["url"] =~ "^/[^/]+\.git/info/refs" {
+                cgi.assign = ( "" => "/usr/libexec/git-core/git-http-backend" )
+                setenv.add-environment = (
+                    "GIT_PROJECT_ROOT" => "/tmp/repos",
+                    "GIT_HTTP_EXPORT_ALL" => "1"
+                )
+            }
+            LIGHTTPD
+
+            # Start lighttpd
+            echo "Starting git HTTP server on port 8080..."
+            lighttpd -D -f /tmp/lighttpd.conf
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        volumeMounts:
+        - name: nodejs-repo
+          mountPath: /config/nodejs
+        - name: python-repo
+          mountPath: /config/python
+        resources:
+          limits:
+            memory: 256Mi
+          requests:
+            memory: 128Mi
+      volumes:
+      - name: nodejs-repo
+        configMap:
+          name: nodejs-repo
+      - name: python-repo
+        configMap:
+          name: python-repo
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: git-server
+  namespace: ${NAMESPACE}
+  labels:
+    app: git-server
+spec:
+  type: ClusterIP
+  ipFamilyPolicy: SingleStack
+  ipFamilies:
+    - IPv6
+  ports:
+  - port: 8080
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  selector:
+    app: git-server

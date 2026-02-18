@@ -15,6 +15,10 @@
 
 set -e
 
+# Get script directory for accessing manifest files
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MANIFEST_DIR="${SCRIPT_DIR}/../manifests"
+
 # Color codes
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -63,7 +67,7 @@ while [[ $# -gt 0 ]]; do
             DASHBOARD_IMAGE="$2"
             shift 2
             ;;
-        --che-server-image)
+        --server-image|--che-server-image)
             CHE_SERVER_IMAGE="$2"
             shift 2
             ;;
@@ -88,7 +92,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --kubeconfig <path>              Path to kubeconfig file (required)"
             echo "  --namespace <name>               Namespace for Eclipse Che (default: eclipse-che)"
             echo "  --dashboard-image <image>        Dashboard container image (shortcuts: pr-XXXX, next, latest)"
-            echo "  --che-server-image <image>       Che server container image"
+            echo "  --server-image <image>           Che server container image (shortcuts: pr-XXXX, next, latest)"
             echo "  --skip-devworkspace              Skip DevWorkspace Operator installation"
             echo "  --devworkspace-bundle <image>    DevWorkspace bundle image (default: quay.io/devfile/devworkspace-operator-bundle:next)"
             echo "  --che-bundle <image>             Che bundle image (default: quay.io/eclipse/eclipse-che-openshift-opm-bundles:next)"
@@ -567,31 +571,9 @@ kubectl patch deployment che-operator -n "$NAMESPACE" --type='json' -p='[
 
 # Create leader election RBAC for Che Operator
 log_info "Creating leader election RBAC..."
-cat <<EOF | kubectl apply -f -
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: che-operator-leader-election
-  namespace: $NAMESPACE
-rules:
-- apiGroups: ["coordination.k8s.io"]
-  resources: ["leases"]
-  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: che-operator-leader-election
-  namespace: $NAMESPACE
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: che-operator-leader-election
-subjects:
-- kind: ServiceAccount
-  name: ${SA_NAME:-che-operator}
-  namespace: $NAMESPACE
-EOF
+export NAMESPACE
+export SA_NAME=${SA_NAME:-che-operator}
+envsubst < "${MANIFEST_DIR}/che/leader-election-rbac.yaml" | kubectl apply -f -
 
 # Wait for Che Operator
 log_info "Waiting for Che Operator..."
@@ -612,42 +594,23 @@ echo
 
 log_info "Step 4: Creating CheCluster Custom Resource"
 
-# Build CheCluster CR
-cat > "$TEMP_DIR/checluster.yaml" <<YAML
-apiVersion: org.eclipse.che/v2
-kind: CheCluster
-metadata:
-  name: eclipse-che
-  namespace: $NAMESPACE
-spec:
-  components:
-    cheServer:
-      debug: false
-      logLevel: INFO
-      deployment:
-        containers:
-          - name: che-server
-YAML
-
-# Add custom Che server image if specified
+# Expand che-server image shortcuts
 if [ -n "$CHE_SERVER_IMAGE" ]; then
-    cat >> "$TEMP_DIR/checluster.yaml" <<YAML
-            image: $CHE_SERVER_IMAGE
-YAML
+    case "$CHE_SERVER_IMAGE" in
+        pr-*)
+            CHE_SERVER_IMAGE="quay.io/eclipse/che-server:$CHE_SERVER_IMAGE"
+            ;;
+        next)
+            CHE_SERVER_IMAGE="quay.io/eclipse/che-server:next"
+            ;;
+        latest)
+            CHE_SERVER_IMAGE="quay.io/eclipse/che-server:latest"
+            ;;
+    esac
 fi
 
-cat >> "$TEMP_DIR/checluster.yaml" <<YAML
-            imagePullPolicy: Always
-
-    dashboard:
-      deployment:
-        containers:
-          - name: dashboard
-YAML
-
-# Add custom dashboard image if specified
+# Expand dashboard image shortcuts
 if [ -n "$DASHBOARD_IMAGE" ]; then
-    # Expand shortcuts
     case "$DASHBOARD_IMAGE" in
         pr-*)
             DASHBOARD_IMAGE="quay.io/eclipse/che-dashboard:$DASHBOARD_IMAGE"
@@ -659,29 +622,24 @@ if [ -n "$DASHBOARD_IMAGE" ]; then
             DASHBOARD_IMAGE="quay.io/eclipse/che-dashboard:latest"
             ;;
     esac
-
-    cat >> "$TEMP_DIR/checluster.yaml" <<YAML
-            image: $DASHBOARD_IMAGE
-YAML
 fi
 
-cat >> "$TEMP_DIR/checluster.yaml" <<YAML
-            imagePullPolicy: Always
+# Build image lines for template substitution
+CHE_SERVER_IMAGE_LINE=""
+if [ -n "$CHE_SERVER_IMAGE" ]; then
+    CHE_SERVER_IMAGE_LINE=$'\n'"            image: ${CHE_SERVER_IMAGE}"
+fi
 
-  devEnvironments:
-    startTimeoutSeconds: 600
-    defaultEditor: che-incubator/che-code/latest
-    defaultComponents:
-      - name: universal-developer-image
-        container:
-          image: quay.io/devfile/universal-developer-image:ubi9-latest
-          memoryLimit: 4Gi
-          memoryRequest: 2Gi
+DASHBOARD_IMAGE_LINE=""
+if [ -n "$DASHBOARD_IMAGE" ]; then
+    DASHBOARD_IMAGE_LINE=$'\n'"            image: ${DASHBOARD_IMAGE}"
+fi
 
-  networking:
-    auth:
-      identityProviderURL: ""
-YAML
+# Apply CheCluster CR from template
+export NAMESPACE
+export CHE_SERVER_IMAGE_LINE
+export DASHBOARD_IMAGE_LINE
+envsubst < "${MANIFEST_DIR}/che/checluster.yaml" > "$TEMP_DIR/checluster.yaml"
 
 log_info "Applying CheCluster CR:"
 cat "$TEMP_DIR/checluster.yaml"

@@ -1,0 +1,70 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nodejs-repo
+  namespace: ${NAMESPACE}
+data:
+  package.json: |
+    {
+      "name": "nodejs-hello-world",
+      "version": "1.0.0",
+      "description": "Simple Node.js app for IPv6 testing",
+      "main": "server.js",
+      "scripts": {
+        "start": "node server.js"
+      },
+      "dependencies": {
+        "express": "^4.18.0"
+      }
+    }
+  server.js: |
+    const express = require('express');
+    const app = express();
+    const port = 3000;
+
+    app.get('/', (req, res) => {
+      res.send('Hello from IPv6 Node.js application!');
+    });
+
+    app.listen(port, () => {
+      console.log(`Server running on port ${port}`);
+    });
+  README.md: |
+    # Node.js Hello World - IPv6 Test
+
+    This is a simple Node.js application for testing Eclipse Che with IPv6.
+
+    ## Run
+    ```
+    npm install
+    npm start
+    ```
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: python-repo
+  namespace: ${NAMESPACE}
+data:
+  app.py: |
+    from flask import Flask
+    app = Flask(__name__)
+
+    @app.route('/')
+    def hello():
+        return 'Hello from IPv6 Python application!'
+
+    if __name__ == '__main__':
+        app.run(host='0.0.0.0', port=8080)
+  requirements.txt: |
+    Flask==3.0.0
+  README.md: |
+    # Python Hello World - IPv6 Test
+
+    This is a simple Python application for testing Eclipse Che with IPv6.
+
+    ## Run
+    ```
+    pip install -r requirements.txt
+    python app.py
+    ```

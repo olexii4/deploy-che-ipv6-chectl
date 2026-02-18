@@ -26,6 +26,7 @@ Mirror all images to the cluster's local registry (IPv6 clusters cannot pull fro
 ./scripts/mirror-images-to-registry.sh \
   --kubeconfig ~/ostest-kubeconfig.yaml \
   --dashboard-image pr-1442 \
+  --server-image pr-951 \
   --mode full \
   --parallel 4
 ```
@@ -43,12 +44,12 @@ Deploy Che with your PR's che-server image:
 ./scripts/deploy-che-from-bundles.sh \
   --kubeconfig ~/ostest-kubeconfig.yaml \
   --dashboard-image pr-1442 \
-  --che-server-image quay.io/eclipse/che-server:pr-951 \
+  --server-image pr-951 \
   --namespace eclipse-che
 ```
 
 **Parameters:**
-- `--che-server-image`: Your custom che-server image from the PR
+- `--server-image`: Your custom che-server image from the PR (use pr-XXXX shortcut)
 - `--dashboard-image`: Dashboard image (use pr-XXXX shortcut)
 - `--namespace`: Eclipse Che namespace (default: eclipse-che)
 
